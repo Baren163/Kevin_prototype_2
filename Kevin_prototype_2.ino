@@ -32,40 +32,7 @@ uint8_t registerByte;
 uint8_t myRegister;
 
 uint8_t dataStreamStatus = 0;
-uint8_t dataToSend[320] = { // 64 * 5 = 320. Do 5 x '64 register' page writes
-0,0,0,0,0,60,124,0,63,248,
-0,0,0,0,0,0,0,0,0,0,
-0,56,240,0,7,248,0,0,0,0,
-0,0,0,0,0,0,0,57,224,0,
-3,252,0,0,0,0,0,0,0,0,
-0,0,0,127,224,0,1,252,0,0,
-0,0,0,0,0,0,0,0,0,127,
-192,0,0,124,0,0,0,0,0,0,
-0,0,0,0,0,255,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,254,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,1,248,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,1,240,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0
-                          }; // An array of 8 bit values (8 pixels per element)
+uint8_t dataToSend[320]; // An array of 8 bit values (8 pixels per element)
 uint16_t index = 0;
 uint16_t page = 0;
 uint16_t REG = 0;
@@ -74,6 +41,7 @@ uint8_t REG_L = 0;
 bool setReadAddress = 0;
 bool currentReadBool = 0;
 bool byteWrite = 0;
+bool readCycle = 0;
 uint16_t ROW, COL = 0;
 uint8_t byteBuffer = 0;
 uint8_t idx = 0;
@@ -371,7 +339,7 @@ uint8_t readMPU(uint8_t registerToRead_H, uint8_t registerToRead_L) {
 
         //Serial.print("TWDR value at supposed data receival: ");
         // Serial.println(TWDR);
-        registerByte = TWDR;
+        readValue = TWDR;
         IsrExitFlow = 0;
 
         break;
@@ -573,6 +541,8 @@ void setup() {
   twiInitialise(72);
   //tft_init();
 
+  setCurrentReadAddress(0); // CANNOT READ FROM CHIP BEFORE SETTING A READ ADDRESS FIRST (can also be done by writing data)
+
   // for (page = 5; page < 10; page++) {
   //   uint8_t registerAddress_H = ((uint16_t)page * 64) >> 8;
   //   uint8_t registerAddress_L = page * 64;
@@ -593,7 +563,6 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
 
-  //delay(10);
 
   // if (REG < 1000) {
   //   // Take Readings
@@ -688,34 +657,77 @@ void loop() {
 
   //}
 
+  // if (readCycle == 1) {
 
+    if (REG < 1000) {
 
+      // Take Readings
+      TWCR = SEND_START_CONDITION;
+      uint8_t byte = readMPU(REG_H, REG_L);
 
-  if (Serial.available() > 0) {
-
-    incomingByte = Serial.read();
-
-    if (incomingByte == 49) { // ASCII: 1
-      byteBuffer = byteBuffer | (1 << idx);  // 0000001
-      idx++;
-      incomingByte = 0;
-    } else if (incomingByte == 48) {
-      byteBuffer = byteBuffer & ~(1 << idx);  // Bitwise NOT: ~     Logical NOT: !
-      idx++;
-      incomingByte = 0;
-    }
-
-    if (idx == 8) {
-      idx = 0;
-      Serial.println(byteBuffer);
-      registerWrite(REG_H, REG_L, byteBuffer);
       REG++;
-      REG_H = REG >> 8;
       REG_L = REG;
-      byteBuffer = 0;
+      REG_H = REG >> 8;
+
+      for (int k = 7; k >= 0; k--) {
+        Serial.print((byte >> k) & 1);
+      }
+
+      if ((REG % 16 == 0) && (REG != 0)) {
+        Serial.println(" ");
+      }
+
     }
 
-  }
+  //}
+
+
+
+
+  // if (Serial.available() > 0) { // Enter F to exit loop and print the contents of the memory chip to Serial
+
+  //   incomingByte = Serial.read();
+
+    
+  //   if (incomingByte == 70) {
+
+  //     readCycle = 1;
+  //     REG = 0;
+  //     incomingByte = 0;
+
+  //   }
+
+
+  //   if (readCycle == 0) {
+      
+  //     if (incomingByte == 49) { // ASCII: 1
+  //       byteBuffer = byteBuffer | (1 << idx);  // 0000001
+  //       idx++;
+  //       incomingByte = 0;
+  //     } else if (incomingByte == 48) {  // ASCII: 0
+  //       byteBuffer = byteBuffer & ~(1 << idx);  // Bitwise NOT: ~     Logical NOT: !
+  //       idx++;
+  //       incomingByte = 0;
+  //     }
+
+  //     if (idx == 8) {
+  //       idx = 0;
+  //       registerWrite(REG_H, REG_L, byteBuffer);
+  //       Serial.print("Written to register ");
+  //       Serial.println(REG);
+  //       REG++;
+  //       REG_H = REG >> 8;
+  //       REG_L = REG;
+  //       byteBuffer = 0;
+  //     }
+
+  //   }
+
+
+
+
+
+  // }
 
 
 }
