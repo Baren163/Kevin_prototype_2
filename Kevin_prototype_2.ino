@@ -73,7 +73,11 @@ uint8_t REG_H = 0;
 uint8_t REG_L = 0;
 bool setReadAddress = 0;
 bool currentReadBool = 0;
+bool byteWrite = 0;
 uint16_t ROW, COL = 0;
+uint8_t byteBuffer = 0;
+uint8_t idx = 0;
+uint8_t incomingByte = 0;
 
 float counter = 0;
 float time_1, time_2, time;
@@ -151,15 +155,25 @@ void writeMPU(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t valu
         switch (dataStreamStatus) {
 
           case 0:
+
             TWDR = registerToWrite_L;
             dataStreamStatus = 1;
             break;
 
           case 1:
+
             if (setReadAddress = 1) {
+
               dataStreamStatus = 0;
               IsrExitFlow = 3;
+
+            } else if (byteWrite == 1) {
+
+              TWDR = valueToWrite;
+              dataStreamStatus = 2;
+
             } else {
+
               if (index < 64) {
                 TWDR = dataToSend[index + (page * 64)];
                 index++;
@@ -169,21 +183,32 @@ void writeMPU(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t valu
                 IsrExitFlow = 3;
                 dataStreamStatus = 0;
               }
+
             }
             break;
 
           case 2:
 
-            if (index < 64) {
+            if (byteWrite == 1) {
+
+              // Send stop condition
+              IsrExitFlow = 3;
+              dataStreamStatus = 0;
+
+            } else if (index < 64) {
+
               TWDR = dataToSend[index + (page * 64)];
               // Serial.print(dataToSend[index + (page * 64)]);
               // Serial.print(". ");
               index++;
               dataStreamStatus = 1;
+
             } else {
+
               // Send stop condition
               IsrExitFlow = 3;
               dataStreamStatus = 0;
+
             }
             break;
 
@@ -490,7 +515,7 @@ void tft_draw_next_8_pixels(uint8_t byte) {
   digitalWrite(TFT_CS, LOW);
 
   for (int k = 7; k >= 0; k--) {
-    if ((registerByte >> k) & 1) {
+    if ((byte >> k) & 1) {
       spi_transfer(0xF0);
       spi_transfer(0x0F);
     } else {
@@ -519,6 +544,15 @@ uint8_t currentRead() {
   return byte;
 }
 
+void registerWrite(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t valueToWrite) {
+
+  byteWrite = 1;
+  TWCR = SEND_START_CONDITION;
+  writeMPU(registerToWrite_H, registerToWrite_L, valueToWrite);
+  byteWrite = 0;
+
+}
+
 
 void setup() {
   // put your setup code here, to run once:
@@ -534,9 +568,10 @@ void setup() {
   //dataReadComplete = 1;
   //GVN = 0;
   myRegister = 128;
+  REG = 0;
 
   twiInitialise(72);
-  tft_init();
+  //tft_init();
 
   // for (page = 5; page < 10; page++) {
   //   uint8_t registerAddress_H = ((uint16_t)page * 64) >> 8;
@@ -560,42 +595,42 @@ void loop() {
 
   //delay(10);
 
-  if (REG < 1000) {
-    // Take Readings
+  // if (REG < 1000) {
+  //   // Take Readings
 
    
-    // if (REG == 0) {
-    //   setCurrentReadAddress(0);
-    // }
-    // registerByte = currentRead();
+  //   // if (REG == 0) {
+  //   //   setCurrentReadAddress(0);
+  //   // }
+  //   // registerByte = currentRead();
 
 
-    TWCR = SEND_START_CONDITION;
-    registerByte = readMPU(REG_H, REG_L);
-     time_1 = micros();
+  //   TWCR = SEND_START_CONDITION;
+  //   registerByte = readMPU(REG_H, REG_L);
+  //   //time_1 = micros();
 
-    tft_set_addr_window(COL, ROW, COL+7, ROW);
-    tft_draw_next_8_pixels(registerByte);
+  //   tft_set_addr_window(COL, ROW, COL+7, ROW);
+  //   tft_draw_next_8_pixels(registerByte);
 
-time_2 = micros();
-    time = time_2 - time_1;
+  //   //time_2 = micros();
+  //   //time = time_2 - time_1;
 
-    Serial.println(time);
-
-
-    REG++;
-    REG_L = REG;
-    REG_H = REG >> 8;
+  //   // Serial.println(time);
 
 
-    if ((REG % 16 == 0) && (REG != 0)) { // Bitwise AND: &, Logical AND: &&. Modulo operator calculates remainder
-      ROW++;
-      COL = 0;
-    } else {
-      COL += 8;
-    }
+  //   REG++;
+  //   REG_L = REG;
+  //   REG_H = REG >> 8;
 
-  }
+
+  //   if ((REG % 16 == 0) && (REG != 0)) { // Bitwise AND: &, Logical AND: &&. Modulo operator calculates remainder
+  //     ROW++;
+  //     COL = 0;
+  //   } else {
+  //     COL += 8;
+  //   }
+
+  // }
 
 
 
@@ -625,33 +660,62 @@ time_2 = micros();
   // } else {
 
 
-  //   if (REG < 1000) {
+    // if (REG < 1000) {
 
-  //     // Take Readings
-  //     TWCR = SEND_START_CONDITION;
-  //     registerByte = readMPU(REG_H, REG_L);
+    //   // Take Readings
+    //   TWCR = SEND_START_CONDITION;
+    //   registerByte = readMPU(REG_H, REG_L);
 
-  //     REG++;
-  //     REG_L = REG;
-  //     REG_H = REG >> 8;
+    //   REG++;
+    //   REG_L = REG;
+    //   REG_H = REG >> 8;
 
-  //     for (int k = 7; k >= 0; k--) {
-  //       Serial.print((registerByte >> k) & 1);
-  //     }
+    //   for (int k = 7; k >= 0; k--) {
+    //     Serial.print((registerByte >> k) & 1);
+    //   }
 
-  //     if ((REG % 16 == 0) && (REG != 0)) {
-  //       Serial.println(" ");
-  //     }
+    //   if ((REG % 16 == 0) && (REG != 0)) {
+    //     Serial.println(" ");
+    //   }
 
-  //     if (REG == 960) {
-  //       Serial.print("End of 5 pages");
-  //       delay(100);
-  //     }
+    //   if (REG == 960) {
+    //     Serial.print("End of 5 pages");
+    //     delay(100);
+    //   }
 
-  //   }
+    // }
 
 
-  // }
+  //}
+
+
+
+
+  if (Serial.available() > 0) {
+
+    incomingByte = Serial.read();
+
+    if (incomingByte == 49) { // ASCII: 1
+      byteBuffer = byteBuffer | (1 << idx);  // 0000001
+      idx++;
+      incomingByte = 0;
+    } else if (incomingByte == 48) {
+      byteBuffer = byteBuffer & ~(1 << idx);  // Bitwise NOT: ~     Logical NOT: !
+      idx++;
+      incomingByte = 0;
+    }
+
+    if (idx == 8) {
+      idx = 0;
+      Serial.println(byteBuffer);
+      registerWrite(REG_H, REG_L, byteBuffer);
+      REG++;
+      REG_H = REG >> 8;
+      REG_L = REG;
+      byteBuffer = 0;
+    }
+
+  }
 
 
 }
