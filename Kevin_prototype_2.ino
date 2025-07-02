@@ -130,7 +130,7 @@ void writeMPU(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t valu
 
           case 1:
 
-            if (setReadAddress = 1) {
+            if (setReadAddress == 1) {
 
               dataStreamStatus = 0;
               IsrExitFlow = 3;
@@ -539,7 +539,7 @@ void setup() {
   REG = 0;
 
   twiInitialise(72);
-  //tft_init();
+  tft_init();
 
   setCurrentReadAddress(0); // CANNOT READ FROM CHIP BEFORE SETTING A READ ADDRESS FIRST (can also be done by writing data)
 
@@ -563,43 +563,41 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
 
+  if (readCycle == 1) {
+  
 
-  // if (REG < 1000) {
-  //   // Take Readings
+    if (ROW < 128) {
+      // Take Readings
 
-   
-  //   // if (REG == 0) {
-  //   //   setCurrentReadAddress(0);
-  //   // }
-  //   // registerByte = currentRead();
+      TWCR = SEND_START_CONDITION;
+      registerByte = readMPU(REG_H, REG_L);
+      //time_1 = micros();
 
+      tft_set_addr_window(COL, ROW, COL+7, ROW);
+      tft_draw_next_8_pixels(registerByte);
 
-  //   TWCR = SEND_START_CONDITION;
-  //   registerByte = readMPU(REG_H, REG_L);
-  //   //time_1 = micros();
+      //time_2 = micros();
+      //time = time_2 - time_1;
 
-  //   tft_set_addr_window(COL, ROW, COL+7, ROW);
-  //   tft_draw_next_8_pixels(registerByte);
-
-  //   //time_2 = micros();
-  //   //time = time_2 - time_1;
-
-  //   // Serial.println(time);
+      // Serial.println(time);
 
 
-  //   REG++;
-  //   REG_L = REG;
-  //   REG_H = REG >> 8;
+      REG++;
+      REG_L = REG;
+      REG_H = REG >> 8;
 
 
-  //   if ((REG % 16 == 0) && (REG != 0)) { // Bitwise AND: &, Logical AND: &&. Modulo operator calculates remainder
-  //     ROW++;
-  //     COL = 0;
-  //   } else {
-  //     COL += 8;
-  //   }
+      if ((REG % 20 == 0) && (REG != 0)) { // Bitwise AND: &, Logical AND: &&. Modulo operator calculates remainder
+        ROW++;
+        COL = 0;
+      } else {
+        COL += 8;
+      }
 
-  // }
+    }
+
+
+  }
 
 
 
@@ -659,75 +657,85 @@ void loop() {
 
   // if (readCycle == 1) {
 
-    if (REG < 1000) {
+  //   if (REG < 1000) {
 
-      // Take Readings
-      TWCR = SEND_START_CONDITION;
-      uint8_t byte = readMPU(REG_H, REG_L);
+  //     // Take Readings
+  //     TWCR = SEND_START_CONDITION;
+  //     uint8_t byte = readMPU(REG_H, REG_L);
 
-      REG++;
-      REG_L = REG;
-      REG_H = REG >> 8;
+  //     REG++;
+  //     REG_L = REG;
+  //     REG_H = REG >> 8;
 
-      for (int k = 7; k >= 0; k--) {
-        Serial.print((byte >> k) & 1);
+  //     for (int k = 7; k >= 0; k--) {
+  //       Serial.print((byte >> k) & 1);
+  //     }
+
+  //     if ((REG % 16 == 0) && (REG != 0)) {
+  //       Serial.println(" ");
+  //     }
+
+  //   }
+
+  // }
+
+
+
+
+  if (Serial.available() > 0) {
+
+    incomingByte = Serial.read();
+
+    
+    if (incomingByte == 70) { // ASCII: F
+
+      readCycle = 1;
+      REG = 0;
+      setCurrentReadAddress(0);
+      incomingByte = 0;
+
+    }
+
+    if (incomingByte == 82) { // ASCII: R
+
+      readCycle = 0;
+      REG = 0;
+      setCurrentReadAddress(0);
+      Serial.println("Returned");
+      incomingByte = 0;
+
+    }
+
+
+    if (readCycle == 0) {
+      
+      if (incomingByte == 49) { // ASCII: 1
+        byteBuffer = byteBuffer | (1 << (7 - idx));  // 0000001
+        idx++;
+        incomingByte = 0;
+      } else if (incomingByte == 48) {  // ASCII: 0
+        byteBuffer = byteBuffer & ~(1 << (7 - idx));  // Bitwise NOT: ~     Logical NOT: !
+        idx++;
+        incomingByte = 0;
       }
 
-      if ((REG % 16 == 0) && (REG != 0)) {
-        Serial.println(" ");
+      if (idx == 8) {
+        idx = 0;
+        delay(10);
+        registerWrite(REG_H, REG_L, byteBuffer);
+        Serial.print(byteBuffer);
+        Serial.print(" Written to register ");
+        Serial.println(REG);
+        REG++;
+        REG_H = REG >> 8;
+        REG_L = REG;
+        byteBuffer = 0;
       }
 
     }
 
-  //}
 
-
-
-
-  // if (Serial.available() > 0) { // Enter F to exit loop and print the contents of the memory chip to Serial
-
-  //   incomingByte = Serial.read();
-
-    
-  //   if (incomingByte == 70) {
-
-  //     readCycle = 1;
-  //     REG = 0;
-  //     incomingByte = 0;
-
-  //   }
-
-
-  //   if (readCycle == 0) {
-      
-  //     if (incomingByte == 49) { // ASCII: 1
-  //       byteBuffer = byteBuffer | (1 << idx);  // 0000001
-  //       idx++;
-  //       incomingByte = 0;
-  //     } else if (incomingByte == 48) {  // ASCII: 0
-  //       byteBuffer = byteBuffer & ~(1 << idx);  // Bitwise NOT: ~     Logical NOT: !
-  //       idx++;
-  //       incomingByte = 0;
-  //     }
-
-  //     if (idx == 8) {
-  //       idx = 0;
-  //       registerWrite(REG_H, REG_L, byteBuffer);
-  //       Serial.print("Written to register ");
-  //       Serial.println(REG);
-  //       REG++;
-  //       REG_H = REG >> 8;
-  //       REG_L = REG;
-  //       byteBuffer = 0;
-  //     }
-
-  //   }
-
-
-
-
-
-  // }
+  }
 
 
 }
