@@ -46,14 +46,14 @@ uint16_t ROW, COL = 0;
 uint8_t byteBuffer = 0;
 uint8_t idx = 0;
 uint8_t incomingByte = 0;
-uint8_t rowArray[20];
+uint8_t rowArray[160];
 
 float counter = 0;
 float time_1, time_2, time;
 
 
 
-//  Initialise the TWI peripheral
+//  Initialise the TWI peripheral (I2C)
 void twiInitialise(uint8_t bitRateGenerator) {
 
   // Activate internal pullups for twi
@@ -62,7 +62,7 @@ void twiInitialise(uint8_t bitRateGenerator) {
 
   TWCR = TWCR_INITIALISE;  // Setting control register bits
 
-  TWBR = bitRateGenerator;  // Setting TWBR to 72 for a SCL frequency of 100kHz, if CPU f = 16MHz
+  TWBR = bitRateGenerator;  // Setting TWBR to 72 for a SCL frequency of 100kHz, if CPU f = 16MHz Set to 12 for 400kHz
 
   TWSR &= !(1 << TWPS1) & !(1 << TWPS0);  // Setting pre scaler bits to zero (Pre scaler = 1)
 
@@ -399,7 +399,7 @@ uint8_t readMPU(uint8_t registerToRead_H, uint8_t registerToRead_L) {
 }
 
 
-void sequentialRead(int number, uint8_t array[]) { // alternatively uint8_t* array
+void sequentialRead(int number, uint8_t array[], uint8_t registerToRead_H, uint8_t registerToRead_L) { // alternatively uint8_t* array
 
   int sequentialCounter = 0;
 
@@ -421,10 +421,55 @@ void sequentialRead(int number, uint8_t array[]) { // alternatively uint8_t* arr
       case 8:
         //  Start condition has been transmitted
         TWCR = TWCR_INITIALISE;
+
+        TWDR = (SLAVE_ADDRESS << 1);  // Load SLA + W
+
+        break;
+
+      case 16:
+        // A repeated start condition has been transmitted
+
         TWDR = ((SLAVE_ADDRESS << 1) + 1);  // Load SLA + R
 
         break;
 
+      case 24:
+        // SLA+W has been transmitted; ACK has been received
+        TWDR = registerToRead_H;  // Load the high byte of the register address into TWDR
+        dataStreamStatus = 0;
+        break;
+
+      case 32:
+        // SLA+W has been transmitted; NOT ACK has been received
+        //Serial.println("Random Access Read NACK");
+        break;
+
+      case 40:
+        // Data byte has been transmitted; ACK has been received
+        switch (dataStreamStatus) {
+
+          case 0:
+            TWDR = registerToRead_L;
+            dataStreamStatus = 1;
+            break;
+
+          case 1:
+            IsrExitFlow = 1;  // Repeated START
+            break;
+
+          default:
+            break;
+        }
+        
+        break;
+
+      case 48:
+        // Data byte has been transmitted; NOT ACK has been received
+        break;
+
+      case 56:
+        // Arbitration lost in SLA+W or data bytes
+        break;
 
       case 64:
         // SLA+R has been transmitted; ACK has been received, data byte will be received
@@ -493,9 +538,7 @@ void sequentialRead(int number, uint8_t array[]) { // alternatively uint8_t* arr
         break;
     }
   }
-
 }
-
 
 void spi_init() {
   // Set MOSI (PB2) and SCK (PB1) as output
@@ -631,7 +674,7 @@ void drawRow(uint8_t* rowArray) {
   digitalWrite(TFT_DC, HIGH); // Data mode
   digitalWrite(TFT_CS, LOW);
 
-  for (int j = 0; j < 20; j++) {
+  for (int j = 0; j < 160; j++) {
     for (int k = 7; k >= 0; k--) {
       if ((rowArray[j] >> k) & 1) {
         spi_transfer(0xFF);
@@ -641,6 +684,43 @@ void drawRow(uint8_t* rowArray) {
         spi_transfer(0);      
       }
     }
+  }
+
+  digitalWrite(TFT_CS, HIGH);
+
+}
+
+void drawImageDataDoubleSize(uint8_t* imageData) {
+
+  digitalWrite(TFT_DC, HIGH); // Data mode
+  digitalWrite(TFT_CS, LOW);
+
+  bool repeat = 1;
+
+  for (int j = 0; j < 160; j++) {
+    for (int k = 7; k >= 0; k--) {
+      if ((rowArray[j] >> k) & 1) {
+        spi_transfer(0xFF);
+        spi_transfer(0xF0);
+        spi_transfer(0xFF);
+        spi_transfer(0xF0);
+      } else {
+        spi_transfer(0);
+        spi_transfer(0);
+        spi_transfer(0);
+        spi_transfer(0);
+      }
+    }
+
+    if ((j + 1) % 10 == 0) {
+      if (repeat == 1) {
+        j -= 10;
+        repeat = 0;
+      } else {
+        repeat = 1;
+      }
+    }
+
   }
 
   digitalWrite(TFT_CS, HIGH);
@@ -664,8 +744,8 @@ void setup() {
   myRegister = 128;
   REG = 0;
 
-  twiInitialise(72);
-  tft_init();
+  twiInitialise(12);  // 12 = 400kHz
+  //tft_init();
 
   setCurrentReadAddress(0); // CANNOT READ FROM CHIP BEFORE SETTING A READ ADDRESS FIRST (can also be done by writing data)
 
@@ -682,23 +762,26 @@ void loop() {
 
     if (ROW < 128) {
       // Take Readings
-      //time_1 = micros();
+
       // TWCR = SEND_START_CONDITION;
       // registerByte = readMPU(REG_H, REG_L);
-
+      //time_1 = micros(); 
       
       TWCR = SEND_START_CONDITION;
-      sequentialRead(20, rowArray);
-
-      tft_set_addr_window(COL, ROW, COL+159, ROW);
-      drawRow(rowArray);
-
-      ROW++;
+      sequentialRead(160, rowArray, ((ROW * 5) >> 8), (ROW * 5)); // Length of time for sequentialRead of 160 registers: 15.47 mS at 100kHz I2C. 400kHz: 4.7mS
       
       //time_2 = micros();
+
+      tft_set_addr_window(COL, ROW, COL+159, ROW+31);
+      drawImageDataDoubleSize(rowArray);  // Time to set window addr and draw 1280 pixels: 8.75 mS
+      
+      
+      ROW += 32;
+
+      
       //time = time_2 - time_1;
 
-      // Serial.println(time);
+      //Serial.println(time);
 
 
       // REG++;
@@ -726,26 +809,26 @@ void loop() {
     incomingByte = Serial.read();
 
     
-    if (incomingByte == 70) { // ASCII: F
+    // if (incomingByte == 70) { // ASCII: F
 
-      readCycle = 1;
-      REG = 0;
-      setCurrentReadAddress(0);
-      incomingByte = 0;
+    //   readCycle = 1;
+    //   REG = 0;
+    //   setCurrentReadAddress(0);
+    //   incomingByte = 0;
 
-      delay(10);
+    //   delay(10);
 
-    }
+    // }
 
-    if (incomingByte == 82) { // ASCII: R
+    // if (incomingByte == 82) { // ASCII: R
 
-      readCycle = 0;
-      REG = 0;
-      setCurrentReadAddress(0);
-      Serial.println("Returned");
-      incomingByte = 0;
+    //   readCycle = 0;
+    //   REG = 0;
+    //   setCurrentReadAddress(0);
+    //   Serial.println("Returned");
+    //   incomingByte = 0;
 
-    }
+    // }
 
 
     if (readCycle == 0) {
@@ -764,7 +847,6 @@ void loop() {
         idx = 0;
         delay(10);
         registerWrite(REG_H, REG_L, byteBuffer);
-        Serial.print(byteBuffer);
         Serial.print(" Written to register ");
         Serial.println(REG);
         REG++;
