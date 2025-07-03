@@ -32,9 +32,9 @@ uint8_t registerByte;
 uint8_t myRegister;
 
 uint8_t dataStreamStatus = 0;
-uint8_t dataToSend[320]; // An array of 8 bit values (8 pixels per element)
 uint16_t index = 0;
 uint16_t page = 0;
+uint8_t dataToSend[30];
 uint16_t REG = 0;
 uint8_t REG_H = 0;
 uint8_t REG_L = 0;
@@ -46,6 +46,7 @@ uint16_t ROW, COL = 0;
 uint8_t byteBuffer = 0;
 uint8_t idx = 0;
 uint8_t incomingByte = 0;
+uint8_t rowArray[20];
 
 float counter = 0;
 float time_1, time_2, time;
@@ -240,7 +241,10 @@ void writeMPU(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t valu
       case 3:
         //Serial.println("STOP condition will be sent");
         IsrExitFlow = 0;
+        
         TWCR = SEND_STOP_CONDITION;
+
+
         return;
         break;
 
@@ -383,7 +387,6 @@ uint8_t readMPU(uint8_t registerToRead_H, uint8_t registerToRead_L) {
         //Serial.println("STOP condition will be sent");
         TWCR = SEND_STOP_CONDITION;
 
-
         return readValue;
 
         break;
@@ -396,6 +399,103 @@ uint8_t readMPU(uint8_t registerToRead_H, uint8_t registerToRead_L) {
 }
 
 
+void sequentialRead(int number, uint8_t array[]) { // alternatively uint8_t* array
+
+  int sequentialCounter = 0;
+
+  // While communication with memory device bit is set
+  while (1) {
+
+    // While TWINT is 0 wait in this loop
+    while (!(TWCR & (1 << TWINT))) {
+      ;
+    }
+
+    IsrExitFlow = 0;
+
+    TWCR = TWCR_INITIALISE;  // 01000100
+
+
+    switch (TWSR) {
+
+      case 8:
+        //  Start condition has been transmitted
+        TWCR = TWCR_INITIALISE;
+        TWDR = ((SLAVE_ADDRESS << 1) + 1);  // Load SLA + R
+
+        break;
+
+
+      case 64:
+        // SLA+R has been transmitted; ACK has been received, data byte will be received
+        
+        IsrExitFlow = 0;
+
+        break;
+
+      case 80:
+        // Data byte has been received; ACK has been returned, data byte will be stored and ACK will be returned to just keep reading
+
+        if (sequentialCounter < number) {
+          array[sequentialCounter] = TWDR;
+          IsrExitFlow = 0;
+          sequentialCounter++;
+        } else {
+          IsrExitFlow = 2;  // NACK
+        }
+        
+        break;
+
+      case 88:
+        // Data byte has been received; NACK has been returned, data byte will be stored and STOP condition will be sent to end transmission
+
+        //readValue = TWDR;
+
+        IsrExitFlow = 3;  // STOP
+
+        break;
+
+      default:
+        break;
+    }
+
+
+    switch (IsrExitFlow) {
+
+      case 0:
+        TWCR = SET_TWINT;  // 0b11000101
+        break;
+
+      case 1:
+        //Serial.println("Repeated start");
+        TWCR = SEND_START_CONDITION_AND_SET_TWINT;
+        break;
+
+      case 2:
+        //Serial.println("Return NACK");
+        TWCR = CLEAR_TWEA_FOR_NACK_AND_SET_TWINT;
+
+        //Serial.print("High byte stored in registerByte: ");
+        //Serial.println(registerByte);
+        break;
+
+      case 3:
+        //Serial.println("STOP condition will be sent");
+
+
+        TWCR = SEND_STOP_CONDITION;
+
+        return;
+
+        break;
+
+      default:
+        break;
+    }
+  }
+
+}
+
 
 void spi_init() {
   // Set MOSI (PB2) and SCK (PB1) as output
@@ -403,6 +503,8 @@ void spi_init() {
 
   // Enable SPI, Master mode, set clock rate fosc/4
   SPCR = (1 << SPE) | (1 << MSTR);
+
+  SPSR = (1 << SPI2X);   
 }
 
 uint8_t spi_transfer(uint8_t data) {
@@ -455,6 +557,8 @@ void tft_init() {
 
   tft_write_command(0x36);   // MADCTL
   tft_write_data(0xA0);      // 0b10100000 = MY | MV | BGR
+
+  tft_write_command(0x38);  // Idle mode OFF
 
 
   tft_write_command(0x29); // Display ON
@@ -522,6 +626,28 @@ void registerWrite(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t
 }
 
 
+void drawRow(uint8_t* rowArray) {
+
+  digitalWrite(TFT_DC, HIGH); // Data mode
+  digitalWrite(TFT_CS, LOW);
+
+  for (int j = 0; j < 20; j++) {
+    for (int k = 7; k >= 0; k--) {
+      if ((rowArray[j] >> k) & 1) {
+        spi_transfer(0xFF);
+        spi_transfer(0xF0);
+      } else {
+        spi_transfer(0);
+        spi_transfer(0);      
+      }
+    }
+  }
+
+  digitalWrite(TFT_CS, HIGH);
+
+}
+
+
 void setup() {
   // put your setup code here, to run once:
 
@@ -543,18 +669,6 @@ void setup() {
 
   setCurrentReadAddress(0); // CANNOT READ FROM CHIP BEFORE SETTING A READ ADDRESS FIRST (can also be done by writing data)
 
-  // for (page = 5; page < 10; page++) {
-  //   uint8_t registerAddress_H = ((uint16_t)page * 64) >> 8;
-  //   uint8_t registerAddress_L = page * 64;
-  //   uint16_t prevRegisterWrite = 
-  //   TWCR = SEND_START_CONDITION;
-  //   writeMPU(registerAddress_H, registerAddress_L, 0);
-  //   Serial.println(" ");
-  //   index = 0;
-  //   delay(500); // Wait for internal write cycle
-  // }
-
-
 
 }
 
@@ -568,116 +682,41 @@ void loop() {
 
     if (ROW < 128) {
       // Take Readings
-
-      TWCR = SEND_START_CONDITION;
-      registerByte = readMPU(REG_H, REG_L);
       //time_1 = micros();
+      // TWCR = SEND_START_CONDITION;
+      // registerByte = readMPU(REG_H, REG_L);
 
-      tft_set_addr_window(COL, ROW, COL+7, ROW);
-      tft_draw_next_8_pixels(registerByte);
+      
+      TWCR = SEND_START_CONDITION;
+      sequentialRead(20, rowArray);
 
+      tft_set_addr_window(COL, ROW, COL+159, ROW);
+      drawRow(rowArray);
+
+      ROW++;
+      
       //time_2 = micros();
       //time = time_2 - time_1;
 
       // Serial.println(time);
 
 
-      REG++;
-      REG_L = REG;
-      REG_H = REG >> 8;
+      // REG++;
+      // REG_L = REG;
+      // REG_H = REG >> 8;
 
 
-      if ((REG % 20 == 0) && (REG != 0)) { // Bitwise AND: &, Logical AND: &&. Modulo operator calculates remainder
-        ROW++;
-        COL = 0;
-      } else {
-        COL += 8;
-      }
+      // if ((REG % 20 == 0) && (REG != 0)) { // Bitwise AND: &, Logical AND: &&. Modulo operator calculates remainder
+      //   ROW++;
+      //   COL = 0;
+      // } else {
+      //   COL += 0;
+      // }
 
     }
 
 
   }
-
-
-
-
-  // if (page < 5) {
-
-  //   REG = (page+10) * 64;
-  //   REG_L = REG;
-  //   REG_H = REG >> 8;
-
-  //   TWCR = SEND_START_CONDITION;
-  //   writeMPU(REG_H, REG_L, 0); // Page write 64 registers(8 bits each) so 512 pixels
-
-  //   page++;
-  //   index = 0;
-
-  //   Serial.println("Page complete");
-  //   delay(100);
-
-
-  //   if (page == 5) {
-  //     Serial.println("Write complete");
-  //     delay(100);
-  //     REG = 0;
-  //   }
-
-  // } else {
-
-
-    // if (REG < 1000) {
-
-    //   // Take Readings
-    //   TWCR = SEND_START_CONDITION;
-    //   registerByte = readMPU(REG_H, REG_L);
-
-    //   REG++;
-    //   REG_L = REG;
-    //   REG_H = REG >> 8;
-
-    //   for (int k = 7; k >= 0; k--) {
-    //     Serial.print((registerByte >> k) & 1);
-    //   }
-
-    //   if ((REG % 16 == 0) && (REG != 0)) {
-    //     Serial.println(" ");
-    //   }
-
-    //   if (REG == 960) {
-    //     Serial.print("End of 5 pages");
-    //     delay(100);
-    //   }
-
-    // }
-
-
-  //}
-
-  // if (readCycle == 1) {
-
-  //   if (REG < 1000) {
-
-  //     // Take Readings
-  //     TWCR = SEND_START_CONDITION;
-  //     uint8_t byte = readMPU(REG_H, REG_L);
-
-  //     REG++;
-  //     REG_L = REG;
-  //     REG_H = REG >> 8;
-
-  //     for (int k = 7; k >= 0; k--) {
-  //       Serial.print((byte >> k) & 1);
-  //     }
-
-  //     if ((REG % 16 == 0) && (REG != 0)) {
-  //       Serial.println(" ");
-  //     }
-
-  //   }
-
-  // }
 
 
 
@@ -693,6 +732,8 @@ void loop() {
       REG = 0;
       setCurrentReadAddress(0);
       incomingByte = 0;
+
+      delay(10);
 
     }
 
