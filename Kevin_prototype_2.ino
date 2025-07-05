@@ -544,10 +544,12 @@ void spi_init() {
   // Set MOSI (PB2) and SCK (PB1) as output
   DDRB |= (1 << PB2) | (1 << PB1);
 
+  SPSR = (1 << SPI2X); 
+
   // Enable SPI, Master mode, set clock rate fosc/4
   SPCR = (1 << SPE) | (1 << MSTR);
 
-  SPSR = (1 << SPI2X);   
+
 }
 
 uint8_t spi_transfer(uint8_t data) {
@@ -596,7 +598,7 @@ void tft_init() {
   delay(500);
 
   tft_write_command(0x3A); // Interface pixel format
-  tft_write_data(0x05);    // 16-bit/pixel
+  tft_write_data(0x03);    // 12-bit/pixel
 
   tft_write_command(0x36);   // MADCTL
   tft_write_data(0xA0);      // 0b10100000 = MY | MV | BGR
@@ -703,12 +705,12 @@ void drawImageDataDoubleSize(uint8_t* imageData) {
         spi_transfer(0xFF);
         spi_transfer(0xF0);
         spi_transfer(0xFF);
-        spi_transfer(0xF0);
+        // spi_transfer(0xF0);
       } else {
         spi_transfer(0);
         spi_transfer(0);
         spi_transfer(0);
-        spi_transfer(0);
+        // spi_transfer(0);
       }
     }
 
@@ -745,10 +747,9 @@ void setup() {
   REG = 0;
 
   twiInitialise(12);  // 12 = 400kHz
-  //tft_init();
+  tft_init();
 
   setCurrentReadAddress(0); // CANNOT READ FROM CHIP BEFORE SETTING A READ ADDRESS FIRST (can also be done by writing data)
-
 
 }
 
@@ -757,49 +758,42 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
 
-  if (readCycle == 1) {
+  // if (readCycle == 1) {
   
 
-    if (ROW < 128) {
-      // Take Readings
+  //   if (ROW < 128) {
+  //     // Take Readings
 
-      // TWCR = SEND_START_CONDITION;
-      // registerByte = readMPU(REG_H, REG_L);
-      //time_1 = micros(); 
+  //     // TWCR = SEND_START_CONDITION;
+  //     // registerByte = readMPU(REG_H, REG_L);
       
-      TWCR = SEND_START_CONDITION;
-      sequentialRead(160, rowArray, ((ROW * 5) >> 8), (ROW * 5)); // Length of time for sequentialRead of 160 registers: 15.47 mS at 100kHz I2C. 400kHz: 4.7mS
+  //     TWCR = SEND_START_CONDITION;
+  //     sequentialRead(160, rowArray, ((ROW * 5) >> 8), (ROW * 5)); // Length of time for sequentialRead of 160 registers: 15.47 mS at 100kHz I2C. 400kHz: 4.7mS
       
-      //time_2 = micros();
 
-      tft_set_addr_window(COL, ROW, COL+159, ROW+31);
-      drawImageDataDoubleSize(rowArray);  // Time to set window addr and draw 1280 pixels: 8.75 mS
+  //     tft_set_addr_window(COL, ROW, COL+159, ROW+31);
+  //     drawImageDataDoubleSize(rowArray);  // Time to set window addr and draw 1280 pixels: 8.75 mS
       
       
-      ROW += 32;
-
-      
-      //time = time_2 - time_1;
-
-      //Serial.println(time);
+  //     ROW += 32;
 
 
-      // REG++;
-      // REG_L = REG;
-      // REG_H = REG >> 8;
+  //     // REG++;
+  //     // REG_L = REG;
+  //     // REG_H = REG >> 8;
 
 
-      // if ((REG % 20 == 0) && (REG != 0)) { // Bitwise AND: &, Logical AND: &&. Modulo operator calculates remainder
-      //   ROW++;
-      //   COL = 0;
-      // } else {
-      //   COL += 0;
-      // }
+  //     // if ((REG % 20 == 0) && (REG != 0)) { // Bitwise AND: &, Logical AND: &&. Modulo operator calculates remainder
+  //     //   ROW++;
+  //     //   COL = 0;
+  //     // } else {
+  //     //   COL += 0;
+  //     // }
 
-    }
+  //   }
 
 
-  }
+  // }
 
 
 
@@ -808,57 +802,115 @@ void loop() {
 
     incomingByte = Serial.read();
 
-    
-    // if (incomingByte == 70) { // ASCII: F
+    int letterRegisterAddress = (incomingByte - 65) * 640;
 
-    //   readCycle = 1;
-    //   REG = 0;
-    //   setCurrentReadAddress(0);
-    //   incomingByte = 0;
+    ROW = 0;
 
-    //   delay(10);
+    if ((incomingByte > 90) || (incomingByte < 65)) {
+      Serial.println("Please input a letter of the alphabet in upper case");
+    } else {
 
-    // }
+      while (ROW < 128) {
 
-    // if (incomingByte == 82) { // ASCII: R
-
-    //   readCycle = 0;
-    //   REG = 0;
-    //   setCurrentReadAddress(0);
-    //   Serial.println("Returned");
-    //   incomingByte = 0;
-
-    // }
+        // time_1 = micros();
+        
+        TWCR = SEND_START_CONDITION;
+        sequentialRead(160, rowArray, (((ROW * 5) + letterRegisterAddress) >> 8), ((ROW * 5) + letterRegisterAddress)); // Length of time for sequentialRead of 160 registers: 15.47 mS at 100kHz I2C. 400kHz: 4.7mS
+        
+        // time_2 = micros();
+        // time = time_2 - time_1;
+        // Serial.print("Read: "); // 4728 * 4 = 18,912uS per frame (13%)
+        // Serial.println(time);
 
 
-    if (readCycle == 0) {
-      
-      if (incomingByte == 49) { // ASCII: 1
-        byteBuffer = byteBuffer | (1 << (7 - idx));  // 0000001
-        idx++;
-        incomingByte = 0;
-      } else if (incomingByte == 48) {  // ASCII: 0
-        byteBuffer = byteBuffer & ~(1 << (7 - idx));  // Bitwise NOT: ~     Logical NOT: !
-        idx++;
-        incomingByte = 0;
-      }
 
-      if (idx == 8) {
-        idx = 0;
-        delay(10);
-        registerWrite(REG_H, REG_L, byteBuffer);
-        Serial.print(" Written to register ");
-        Serial.println(REG);
-        REG++;
-        REG_H = REG >> 8;
-        REG_L = REG;
-        byteBuffer = 0;
+
+        // time_1 = micros();
+
+        tft_set_addr_window(COL, ROW, COL+159, ROW+31);
+
+        // time_2 = micros();
+        // time = time_2 - time_1;
+        // Serial.print("Set addr: "); // 224uS * 4 = 896uS per frame (0.6%)
+        // Serial.println(time);
+
+
+
+
+        // time_1 = micros();
+
+        drawImageDataDoubleSize(rowArray);  // Time to set window addr and draw 1280 pixels: 8.75 mS
+
+        // time_2 = micros();
+        // time = time_2 - time_1;
+        // Serial.print("Draw: "); // Draw time: 32432uS * 4 = 129,728uS per frame (86%)
+        // Serial.println(time);
+        
+        ROW += 32;
+
+
+
       }
 
     }
-
-
   }
+
+
+  // if (Serial.available() > 0) {
+
+  //   incomingByte = Serial.read();
+
+    
+  //   if (incomingByte == 70) { // ASCII: F
+
+  //     readCycle = 1;
+  //     REG = 0;
+  //     setCurrentReadAddress(0);
+  //     incomingByte = 0;
+
+  //     delay(10);
+
+  //   }
+
+  //   if (incomingByte == 82) { // ASCII: R
+
+  //     readCycle = 0;
+  //     REG = 0;
+  //     setCurrentReadAddress(0);
+  //     Serial.println("Returned");
+  //     incomingByte = 0;
+
+  //   }
+
+
+  //   if (readCycle == 0) {
+      
+  //     if (incomingByte == 49) { // ASCII: 1
+  //       byteBuffer = byteBuffer | (1 << (7 - idx));  // 0000001
+  //       idx++;
+  //       incomingByte = 0;
+  //     } else if (incomingByte == 48) {  // ASCII: 0
+  //       byteBuffer = byteBuffer & ~(1 << (7 - idx));  // Bitwise NOT: ~     Logical NOT: !
+  //       idx++;
+  //       incomingByte = 0;
+  //     }
+
+  //     if (idx == 8) {
+  //       idx = 0;
+  //       delay(10);
+  //       registerWrite(REG_H, REG_L, byteBuffer);
+  //       Serial.print(" Written to register ");
+  //       Serial.println(REG);
+  //       REG++;
+  //       REG_H = REG >> 8;
+  //       REG_L = REG;
+  //       byteBuffer = 0;
+  //     }
+
+  //   }
+
+
+  // }
 
 
 }
