@@ -51,6 +51,9 @@ uint8_t rowArray[160];
 float counter = 0;
 float time_1, time_2, time;
 
+int pos = 1;
+int pos_target = 70;
+
 
 
 //  Initialise the TWI peripheral (I2C)
@@ -744,7 +747,7 @@ void setup() {
   //dataReadComplete = 1;
   //GVN = 0;
   myRegister = 128;
-  REG = 0;
+  REG = 16640;
 
   twiInitialise(12);  // 12 = 400kHz
   tft_init();
@@ -754,106 +757,101 @@ void setup() {
 }
 
 
+// small_face stored at 16640 to 16799
 
 void loop() {
-  // put your main code here, to run repeatedly:
 
-  // if (readCycle == 1) {
+  TWCR = SEND_START_CONDITION;
+  sequentialRead(160, rowArray, (REG >> 8), REG); // Read whole image
   
 
-  //   if (ROW < 128) {
-  //     // Take Readings
-
-  //     // TWCR = SEND_START_CONDITION;
-  //     // registerByte = readMPU(REG_H, REG_L);
-      
-  //     TWCR = SEND_START_CONDITION;
-  //     sequentialRead(160, rowArray, ((ROW * 5) >> 8), (ROW * 5)); // Length of time for sequentialRead of 160 registers: 15.47 mS at 100kHz I2C. 400kHz: 4.7mS
-      
-
-  //     tft_set_addr_window(COL, ROW, COL+159, ROW+31);
-  //     drawImageDataDoubleSize(rowArray);  // Time to set window addr and draw 1280 pixels: 8.75 mS
-      
-      
-  //     ROW += 32;
+  tft_set_addr_window(0 + pos, 10, 79 + pos, 73);
+  drawImageDataDoubleSize(rowArray);  // Draw whole face  // ~31Hz
 
 
-  //     // REG++;
-  //     // REG_L = REG;
-  //     // REG_H = REG >> 8;
+  pos += (pos_target - pos) * 0.1;
+
+  if (pos > 60) {
+    pos_target = 0;
+
+  } else if (pos < 1) {
+    pos_target = 70;
+
+  }
 
 
-  //     // if ((REG % 20 == 0) && (REG != 0)) { // Bitwise AND: &, Logical AND: &&. Modulo operator calculates remainder
-  //     //   ROW++;
-  //     //   COL = 0;
-  //     // } else {
-  //     //   COL += 0;
-  //     // }
-
-  //   }
+  // REG++;
+  // REG_L = REG;
+  // REG_H = REG >> 8;
 
 
+  // if ((REG % 20 == 0) && (REG != 0)) { // Bitwise AND: &, Logical AND: &&. Modulo operator calculates remainder
+  //   ROW++;
+  //   COL = 0;
+  // } else {
+  //   COL += 0;
   // }
 
 
 
 
-  if (Serial.available() > 0) {
 
-    incomingByte = Serial.read();
+  // if (Serial.available() > 0) {
 
-    int letterRegisterAddress = (incomingByte - 65) * 640;
+  //   incomingByte = Serial.read();
 
-    ROW = 0;
+  //   int letterRegisterAddress = (incomingByte - 65) * 640;
 
-    if ((incomingByte > 90) || (incomingByte < 65)) {
-      Serial.println("Please input a letter of the alphabet in upper case");
-    } else {
+  //   ROW = 0;
 
-      while (ROW < 128) {
+  //   if ((incomingByte > 90) || (incomingByte < 65)) {
+  //     Serial.println("Please input a letter of the alphabet in upper case");
+  //   } else {
 
-        // time_1 = micros();
+  //     while (ROW < 128) {
+
+  //       // time_1 = micros();
         
-        TWCR = SEND_START_CONDITION;
-        sequentialRead(160, rowArray, (((ROW * 5) + letterRegisterAddress) >> 8), ((ROW * 5) + letterRegisterAddress)); // Length of time for sequentialRead of 160 registers: 15.47 mS at 100kHz I2C. 400kHz: 4.7mS
+  //       TWCR = SEND_START_CONDITION;
+  //       sequentialRead(160, rowArray, (((ROW * 5) + letterRegisterAddress) >> 8), ((ROW * 5) + letterRegisterAddress)); // Length of time for sequentialRead of 160 registers: 15.47 mS at 100kHz I2C. 400kHz: 4.7mS
         
-        // time_2 = micros();
-        // time = time_2 - time_1;
-        // Serial.print("Read: "); // 4728 * 4 = 18,912uS per frame (13%)
-        // Serial.println(time);
+  //       // time_2 = micros();
+  //       // time = time_2 - time_1;
+  //       // Serial.print("Read: "); // 4728 * 4 = 18,912uS per frame (13%)
+  //       // Serial.println(time);
 
 
 
 
-        // time_1 = micros();
+  //       // time_1 = micros();
 
-        tft_set_addr_window(COL, ROW, COL+159, ROW+31);
+  //       tft_set_addr_window(COL, ROW, COL+159, ROW+31);
 
-        // time_2 = micros();
-        // time = time_2 - time_1;
-        // Serial.print("Set addr: "); // 224uS * 4 = 896uS per frame (0.6%)
-        // Serial.println(time);
-
-
+  //       // time_2 = micros();
+  //       // time = time_2 - time_1;
+  //       // Serial.print("Set addr: "); // 224uS * 4 = 896uS per frame (0.6%)
+  //       // Serial.println(time);
 
 
-        // time_1 = micros();
 
-        drawImageDataDoubleSize(rowArray);  // Time to set window addr and draw 1280 pixels: 8.75 mS
 
-        // time_2 = micros();
-        // time = time_2 - time_1;
-        // Serial.print("Draw: "); // Draw time: 32432uS * 4 = 129,728uS per frame (86%)
-        // Serial.println(time);
+  //       // time_1 = micros();
+
+  //       drawImageDataDoubleSize(rowArray);  // Time to set window addr and draw 1280 pixels: 8.75 mS
+
+  //       // time_2 = micros();
+  //       // time = time_2 - time_1;
+  //       // Serial.print("Draw: "); // Draw time: 32432uS * 4 = 129,728uS per frame (86%)
+  //       // Serial.println(time);
         
-        ROW += 32;
+  //       ROW += 32;
 
 
 
-      }
+  //     }
 
-    }
-  }
+  //   }
+  // }
 
 
   // if (Serial.available() > 0) {
