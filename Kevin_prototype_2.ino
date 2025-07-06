@@ -52,7 +52,8 @@ float counter = 0;
 float time_1, time_2, time;
 
 int pos = 1;
-int pos_target = 70;
+int pos_target = 200;
+int countDown = 4;
 
 
 
@@ -601,7 +602,7 @@ void tft_init() {
   delay(500);
 
   tft_write_command(0x3A); // Interface pixel format
-  tft_write_data(0x03);    // 12-bit/pixel
+  tft_write_data(0x05);    // 16-bit/pixel
 
   tft_write_command(0x36);   // MADCTL
   tft_write_data(0xA0);      // 0b10100000 = MY | MV | BGR
@@ -708,12 +709,12 @@ void drawImageDataDoubleSize(uint8_t* imageData) {
         spi_transfer(0xFF);
         spi_transfer(0xF0);
         spi_transfer(0xFF);
-        // spi_transfer(0xF0);
+        spi_transfer(0xF0);
       } else {
         spi_transfer(0);
         spi_transfer(0);
         spi_transfer(0);
-        // spi_transfer(0);
+        spi_transfer(0);
       }
     }
 
@@ -726,6 +727,21 @@ void drawImageDataDoubleSize(uint8_t* imageData) {
       }
     }
 
+  }
+
+  digitalWrite(TFT_CS, HIGH);
+
+}
+
+void drawBackground() {
+  tft_set_addr_window(0, 0, 161, 131);
+
+  digitalWrite(TFT_DC, HIGH); // Data mode
+  digitalWrite(TFT_CS, LOW);
+
+  for (int i = 0; i < 21384; i++) {
+    spi_transfer(0x00);
+    spi_transfer(0x00);
   }
 
   digitalWrite(TFT_CS, HIGH);
@@ -747,35 +763,63 @@ void setup() {
   //dataReadComplete = 1;
   //GVN = 0;
   myRegister = 128;
-  REG = 16640;
+  REG = 17280;
 
   twiInitialise(12);  // 12 = 400kHz
   tft_init();
 
   setCurrentReadAddress(0); // CANNOT READ FROM CHIP BEFORE SETTING A READ ADDRESS FIRST (can also be done by writing data)
 
+  drawBackground();
+
+  ROW = 0;
+
 }
 
-
-// small_face stored at 16640 to 16799
+// alphabet stored from 0 to 16639
+// small_face stored at 16640 to 17279  (80x64)
+// 4 planes stores from 17280 to 19199 (4 * (80x48))
 
 void loop() {
 
+
   TWCR = SEND_START_CONDITION;
-  sequentialRead(160, rowArray, (REG >> 8), REG); // Read whole image
+  sequentialRead(160, rowArray, ((REG + (ROW*10)) >> 8), (REG + (ROW*10))); // Read 1/3 of plane image
   
 
-  tft_set_addr_window(0 + pos, 10, 79 + pos, 73);
-  drawImageDataDoubleSize(rowArray);  // Draw whole face  // ~31Hz
+  tft_set_addr_window(0+pos, ROW, 79+pos, ROW+15);
+  drawRow(rowArray);
+
+  ROW += 16;
+
+  if (ROW == 48) {
+    ROW = 0;
+    if (pos < 30) {
+      REG = 17280;
+    } else if (pos < 45) {
+      REG = 17760;
+    } else if (pos < 55) {
+      REG = 18240;
+    } else {
+      REG = 18720;
+    }
+  }
+
+  // countDown--;
+  // if (countDown == 0) {
+  //   drawBackground();
+  //   countDown = 4;
+  // }
+  
 
 
-  pos += (pos_target - pos) * 0.1;
+  pos += (pos_target - pos) * 0.01;
 
-  if (pos > 60) {
+  if (pos > 70) {
     pos_target = 0;
 
   } else if (pos < 1) {
-    pos_target = 70;
+    pos_target = 200;
 
   }
 
@@ -859,26 +903,26 @@ void loop() {
   //   incomingByte = Serial.read();
 
     
-  //   if (incomingByte == 70) { // ASCII: F
+  //   // if (incomingByte == 70) { // ASCII: F
 
-  //     readCycle = 1;
-  //     REG = 0;
-  //     setCurrentReadAddress(0);
-  //     incomingByte = 0;
+  //   //   readCycle = 1;
+  //   //   REG = 0;
+  //   //   setCurrentReadAddress(0);
+  //   //   incomingByte = 0;
 
-  //     delay(10);
+  //   //   delay(10);
 
-  //   }
+  //   // }
 
-  //   if (incomingByte == 82) { // ASCII: R
+  //   // if (incomingByte == 82) { // ASCII: R
 
-  //     readCycle = 0;
-  //     REG = 0;
-  //     setCurrentReadAddress(0);
-  //     Serial.println("Returned");
-  //     incomingByte = 0;
+  //   //   readCycle = 0;
+  //   //   REG = 0;
+  //   //   setCurrentReadAddress(0);
+  //   //   Serial.println("Returned");
+  //   //   incomingByte = 0;
 
-  //   }
+  //   // }
 
 
   //   if (readCycle == 0) {
