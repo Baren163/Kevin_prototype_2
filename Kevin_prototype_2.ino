@@ -42,17 +42,20 @@ bool setReadAddress = 0;
 bool currentReadBool = 0;
 bool byteWrite = 0;
 bool readCycle = 0;
+bool reverseBool = 0;
 uint16_t ROW, COL = 0;
 uint8_t byteBuffer = 0;
 uint8_t idx = 0;
 uint8_t incomingByte = 0;
 uint8_t rowArray[160];
+int drawImageY = 30;
 
 float counter = 0;
 float time_1, time_2, time;
 
+
 int pos = 1;
-int pos_target = 200;
+int pos_target = 1;
 int countDown = 4;
 
 
@@ -680,14 +683,30 @@ void drawRow(uint8_t* rowArray) {
   digitalWrite(TFT_DC, HIGH); // Data mode
   digitalWrite(TFT_CS, LOW);
 
-  for (int j = 0; j < 160; j++) {
-    for (int k = 7; k >= 0; k--) {
-      if ((rowArray[j] >> k) & 1) {
-        spi_transfer(0xFF);
-        spi_transfer(0xF0);
-      } else {
-        spi_transfer(0);
-        spi_transfer(0);      
+  if (reverseBool == 0) {
+    for (int j = 0; j < 160; j++) {
+      for (int k = 7; k >= 0; k--) {
+        if ((rowArray[j] >> k) & 1) {
+          spi_transfer(0xFF);
+          spi_transfer(0xF0);
+        } else {
+          spi_transfer(0);
+          spi_transfer(0);      
+        }
+      }
+    }
+  } else {
+    for (int row = 0; row < 16; row++) {
+      for (int reg = 10; reg > 0; reg--) {
+        for (int pixel = 0; pixel < 8; pixel++) {
+          if ((rowArray[(row*10) + (reg)] >> pixel) & 1) {
+            spi_transfer(0xFF);
+            spi_transfer(0xF0);
+          } else {
+            spi_transfer(0);
+            spi_transfer(0);     
+          }
+        }
       }
     }
   }
@@ -783,61 +802,75 @@ void setup() {
 void loop() {
 
 
+  if (pos < 40) {
+    reverseBool = 1;
+  } else {
+    reverseBool = 0;
+  }
+
+
   TWCR = SEND_START_CONDITION;
   sequentialRead(160, rowArray, ((REG + (ROW*10)) >> 8), (REG + (ROW*10))); // Read 1/3 of plane image
   
 
-  tft_set_addr_window(0+pos, ROW, 79+pos, ROW+15);
+  tft_set_addr_window(0+pos, (drawImageY + ROW), 79+pos, (drawImageY + ROW+15));
   drawRow(rowArray);
+
 
   ROW += 16;
 
   if (ROW == 48) {
     ROW = 0;
-    if (pos < 30) {
+    if (abs(pos - 40) < 8) {
       REG = 17280;
-    } else if (pos < 45) {
+    } else if (abs(pos - 40) < 15) {
       REG = 17760;
-    } else if (pos < 55) {
+    } else if (abs(pos - 40) < 30) {
       REG = 18240;
     } else {
       REG = 18720;
     }
-  }
 
-  // countDown--;
-  // if (countDown == 0) {
-  //   drawBackground();
-  //   countDown = 4;
-  // }
+
+    countDown--;
+    if (countDown == 0) {
+
+      tft_set_addr_window(0, drawImageY, pos, drawImageY + 48);
+
+      digitalWrite(TFT_DC, HIGH); // Data mode
+      digitalWrite(TFT_CS, LOW);
+      for (int i = 0; i < (pos*48); i++) {
+        spi_transfer(0);
+        spi_transfer(0);
+      }
+      digitalWrite(TFT_CS, HIGH);
+
+
+      tft_set_addr_window(pos+80, drawImageY, 160, drawImageY + 48);
+
+      digitalWrite(TFT_DC, HIGH); // Data mode
+      digitalWrite(TFT_CS, LOW);
+      for (int i = 0; i < ((80-pos)*48); i++) {
+        spi_transfer(0);
+        spi_transfer(0);  
+      }
+      digitalWrite(TFT_CS, HIGH);
+
+
+      countDown = 4;
+    }
+
+    pos += pos_target * 3;
+
+    if (pos > 78) {
+      pos_target = -1;
+    } else if (pos < 0) {
+      pos_target = 1;
+
+    }
+
+  }
   
-
-
-  pos += (pos_target - pos) * 0.01;
-
-  if (pos > 70) {
-    pos_target = 0;
-
-  } else if (pos < 1) {
-    pos_target = 200;
-
-  }
-
-
-  // REG++;
-  // REG_L = REG;
-  // REG_H = REG >> 8;
-
-
-  // if ((REG % 20 == 0) && (REG != 0)) { // Bitwise AND: &, Logical AND: &&. Modulo operator calculates remainder
-  //   ROW++;
-  //   COL = 0;
-  // } else {
-  //   COL += 0;
-  // }
-
-
-
 
 
   // if (Serial.available() > 0) {
