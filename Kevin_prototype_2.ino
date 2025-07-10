@@ -11,7 +11,20 @@
 #define SET_TWINT 196 // 11000100
 #define CLEAR_TWEA_FOR_NACK_AND_SET_TWINT 132 // 10000100
 #define SEND_STOP_CONDITION 212
-#define SLAVE_ADDRESS 80  // 1010000
+#define ST7735S_ADDRESS 80  // 1010000
+#define MPU_ADDRESS 104
+#define GYRO_CONFIG 27
+#define FS_SEL0 3
+#define FS_SEL1 4
+#define GYRO_X_H 67
+#define GYRO_X_L 68
+#define ACCEL_Z_H 63
+#define ACCEL_Y_H 61
+#define ACCEL_X_H 59
+#define SMPRT_DIV 25
+#define CONFIG 26
+#define OFFSET -530
+#define alpha 0.95
 
 // myRegister Pins
 #define DRC 7    // Data read complete
@@ -29,7 +42,6 @@
 uint8_t IsrExitFlow;
 uint8_t isrFunction;
 uint8_t registerByte;
-uint8_t myRegister;
 
 uint8_t dataStreamStatus = 0;
 uint16_t index = 0;
@@ -43,6 +55,7 @@ bool currentReadBool = 0;
 bool byteWrite = 0;
 bool readCycle = 0;
 bool reverseBool = 0;
+bool stop = 0;
 uint16_t ROW, COL = 0;
 uint8_t byteBuffer = 0;
 uint8_t idx = 0;
@@ -51,13 +64,23 @@ uint8_t rowArray[160];
 int drawImageY = 30;
 
 float counter = 0;
-float time_1, time_2, time;
+float time_1, time_2;
 
 
 int pos = 1;
 int pos_target = 1;
 int countDown = 4;
+int pos_unmapped = 1;
 
+float gyroAccelY;
+float gyroAngle = 0;
+float AccelZ;
+float AccelY;
+float accAngle;
+int16_t gyroValue;  // data type 'short', signed 16 bit variable
+unsigned long tempTime;
+unsigned long time = 0;
+float angle;
 
 
 //  Initialise the TWI peripheral (I2C)
@@ -76,8 +99,8 @@ void twiInitialise(uint8_t bitRateGenerator) {
   //Serial.println("Initialised");
 }
 
+void writeMPU(uint8_t registerToWrite, uint8_t valueToWrite) {
 
-void writeMPU(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t valueToWrite) {
 
   while (1) {
 
@@ -95,7 +118,262 @@ void writeMPU(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t valu
         //Serial.println("TWSR reads 8");
         TWCR = TWCR_INITIALISE;
 
-        TWDR = (SLAVE_ADDRESS << 1);  // Load SLA + W
+        TWDR = (MPU_ADDRESS << 1);  // Load SLA + W
+
+        break;
+
+      case 16:
+        // A repeated start condition has been transmitted
+
+        break;
+
+      case 24:
+        // SLA+W has been transmitted; ACK has been received
+
+        //Serial.println("SLA+W has been transmitted; ACK has been received, sending RA");
+
+        TWDR = registerToWrite;  // Load register address (107)
+
+        break;
+
+      case 32:
+        // SLA+W has been transmitted; NOT ACK has been received
+
+        break;
+
+      case 40:
+        // Data byte has been transmitted; ACK has been received
+
+        if (stop == 1) {
+          stop = 0;
+          IsrExitFlow = 3;
+          break;
+        }
+
+        //Serial.println("Data byte has been transmitted; ACK has been received, sending '9'");
+
+        TWDR = valueToWrite;  // Load decimal 9 into register 107 to clear sleep bit, disable temperature sensor and select Gyro X clock
+
+        stop = 1;
+
+        break;
+
+      case 48:
+        // Data byte has been transmitted; NOT ACK has been received
+
+        break;
+
+      case 56:
+        // Arbitration lost in SLA+W or data bytes
+
+        break;
+
+      case 64:
+        // SLA+R has been transmitted; ACK has been received, data byte will be received and ACK will be returned
+
+        break;
+
+      case 80:
+        // Data byte has been received; ACK has been returned, data byte will be stored and NACK will be returned
+
+        break;
+
+      case 88:
+        // Data byte has been received; NOT ACK has been returned, data byte will be store and STOP condition will be sent to end transmission
+
+        break;
+
+      default:
+        break;
+    }
+
+    switch (IsrExitFlow) {
+
+      case 0:
+        TWCR = SET_TWINT;  // 0b11000101
+        break;
+
+      case 1:
+        //Serial.println("Repeated start");
+        TWCR = SEND_START_CONDITION_AND_SET_TWINT;
+        break;
+
+      case 2:
+        //Serial.println("Return NACK");
+        TWCR = CLEAR_TWEA_FOR_NACK_AND_SET_TWINT;
+
+        // gyroValue = (TWDR);
+
+        //Serial.print("High byte stored in gyroValue: ");
+        //Serial.println(gyroValue);
+        break;
+
+      case 3:
+        TWCR = SEND_STOP_CONDITION;
+
+
+        return;
+        break;
+
+      default:
+        break;
+    }
+  }
+}
+
+int16_t readMPU(uint8_t registerToRead) {
+
+  int16_t readValue;
+
+  // While communication with gyro device bit is set
+  while (1) {
+
+    // While TWINT is 0 wait in this loop
+    while (!(TWCR & (1 << TWINT))) {
+    }
+
+    IsrExitFlow = 0;
+
+    TWCR = TWCR_INITIALISE;  // Set TWINT to clear interrupt
+
+
+    // Read from GYRO_X
+    switch (TWSR) {
+
+      case 8:
+        //  Start condition has been transmitted
+        // Serial.println("TWSR reads 8");
+        TWCR = TWCR_INITIALISE;
+
+        TWDR = (MPU_ADDRESS << 1);  // Load SLA + W
+        break;
+
+      case 16:
+        // A repeated start condition has been transmitted
+
+        TWDR = ((MPU_ADDRESS << 1) + 1);  // Load SLA + R
+        //Serial.println(TWDR);
+        break;
+
+      case 24:
+        // SLA+W has been transmitted; ACK has been received
+        TWDR = registerToRead;  // Write the gyro data register address to the slave
+        break;
+
+      case 32:
+        // SLA+W has been transmitted; NOT ACK has been received
+        break;
+
+      case 40:
+        // Data byte has been transmitted; ACK has been received
+        IsrExitFlow = 1;  // Exit ISR with start condition (Repeated START)
+        break;
+
+      case 48:
+        // Data byte has been transmitted; NOT ACK has been received
+        break;
+
+      case 56:
+        // Arbitration lost in SLA+W or data bytes
+        break;
+
+      case 64:
+        // SLA+R has been transmitted; ACK has been received, data byte will be received and ACK will be returned
+
+        // IsrExitFlow = 0;
+
+        break;
+
+      case 80:
+        // Data byte has been received; ACK has been returned, data byte will be stored and NACK will be returned
+
+        //Serial.print("TWDR value at supposed data receival: ");
+        //Serial.println(TWDR);
+
+        IsrExitFlow = 2;  // Return NACK
+
+        break;
+
+      case 88:
+        // Data byte has been received; NOT ACK has been returned, data byte will be store and STOP condition will be sent to end transmission
+
+        //gyroValue += ((uint16_t) (TWDR << 8));
+
+        readValue = readValue << 8;
+
+        readValue += TWDR;
+
+        IsrExitFlow = 3;
+
+        break;
+
+      default:
+        break;
+    }
+
+
+    switch (IsrExitFlow) {
+
+      case 0:
+        TWCR = SET_TWINT;  // 0b11000101
+        break;
+
+      case 1:
+        //Serial.println("Repeated start");
+        TWCR = SEND_START_CONDITION_AND_SET_TWINT;
+        break;
+
+      case 2:
+        //Serial.println("Return NACK");
+        TWCR = CLEAR_TWEA_FOR_NACK_AND_SET_TWINT;
+
+        readValue = (TWDR);
+
+        //Serial.print("High byte stored in gyroValue: ");
+        //Serial.println(gyroValue);
+        break;
+
+      case 3:
+        //Serial.println("STOP condition will be sent");
+        TWCR = SEND_STOP_CONDITION;
+
+        // readValue /= 10;
+        readValue -= OFFSET;
+
+        readValue = ((float)readValue / 32767) * 250;
+
+
+        return readValue;
+
+        break;
+
+      default:
+        break;
+    }
+  }
+
+}
+
+
+void writeI2C(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t valueToWrite) {
+
+  while (1) {
+
+    // While TWINT is 0 wait in this loop
+    while (!(TWCR & (1 << TWINT))) {
+      ;
+    }
+
+    TWCR = TWCR_INITIALISE;  // Set TWINT to clear interrupt
+
+    switch (TWSR) {
+
+      case 8:
+        //  Start condition has been transmitted
+        //Serial.println("TWSR reads 8");
+        TWCR = TWCR_INITIALISE;
+
+        TWDR = (ST7735S_ADDRESS << 1);  // Load SLA + W
 
         break;
 
@@ -103,7 +381,7 @@ void writeMPU(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t valu
         // A repeated start condition has been transmitted
         TWCR = TWCR_INITIALISE;
 
-        TWDR = (SLAVE_ADDRESS << 1);  // Load SLA + W
+        TWDR = (ST7735S_ADDRESS << 1);  // Load SLA + W
 
         break;
 
@@ -262,9 +540,9 @@ void writeMPU(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t valu
 }
 
 
-uint8_t readMPU(uint8_t registerToRead_H, uint8_t registerToRead_L) {
+uint16_t readI2C(uint8_t registerToRead_H, uint8_t registerToRead_L) {
 
-  uint8_t readValue;
+  uint16_t readValue;
 
   // While communication with memory device bit is set
   while (1) {
@@ -286,9 +564,9 @@ uint8_t readMPU(uint8_t registerToRead_H, uint8_t registerToRead_L) {
         TWCR = TWCR_INITIALISE;
 
         if (currentReadBool = 1) {
-          TWDR = ((SLAVE_ADDRESS << 1) + 1);  // Load SLA + R
+          TWDR = ((ST7735S_ADDRESS << 1) + 1);  // Load SLA + R
         } else {
-          TWDR = (SLAVE_ADDRESS << 1);  // Load SLA + W
+          TWDR = (ST7735S_ADDRESS << 1);  // Load SLA + W
         }
 
         break;
@@ -296,7 +574,7 @@ uint8_t readMPU(uint8_t registerToRead_H, uint8_t registerToRead_L) {
       case 16:
         // A repeated start condition has been transmitted
 
-        TWDR = ((SLAVE_ADDRESS << 1) + 1);  // Load SLA + R
+        TWDR = ((ST7735S_ADDRESS << 1) + 1);  // Load SLA + R
         //Serial.println(TWDR);
         break;
 
@@ -429,14 +707,14 @@ void sequentialRead(int number, uint8_t array[], uint8_t registerToRead_H, uint8
         //  Start condition has been transmitted
         TWCR = TWCR_INITIALISE;
 
-        TWDR = (SLAVE_ADDRESS << 1);  // Load SLA + W
+        TWDR = (ST7735S_ADDRESS << 1);  // Load SLA + W
 
         break;
 
       case 16:
         // A repeated start condition has been transmitted
 
-        TWDR = ((SLAVE_ADDRESS << 1) + 1);  // Load SLA + R
+        TWDR = ((ST7735S_ADDRESS << 1) + 1);  // Load SLA + R
 
         break;
 
@@ -656,14 +934,14 @@ void tft_draw_next_8_pixels(uint8_t byte) {
 void setCurrentReadAddress(uint16_t registerAddress) {
   setReadAddress = 1;
   TWCR = SEND_START_CONDITION;
-  writeMPU(registerAddress >> 8, registerAddress, 0);
+  writeI2C(registerAddress >> 8, registerAddress, 0);
   setReadAddress = 0;
 }
 
 uint8_t currentRead() {
   currentReadBool = 1;
   TWCR = SEND_START_CONDITION;
-  uint8_t byte = readMPU(0,0);
+  uint8_t byte = readI2C(0,0);
   currentReadBool = 0;
   return byte;
 }
@@ -672,7 +950,7 @@ void registerWrite(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t
 
   byteWrite = 1;
   TWCR = SEND_START_CONDITION;
-  writeMPU(registerToWrite_H, registerToWrite_L, valueToWrite);
+  writeI2C(registerToWrite_H, registerToWrite_L, valueToWrite);
   byteWrite = 0;
 
 }
@@ -778,16 +1056,34 @@ void setup() {
   Serial.println("Serial begun");
 
   registerByte = 0;
-  //stop_now = 0;
-  //dataReadComplete = 1;
-  //GVN = 0;
-  myRegister = 128;
   REG = 17280;
 
   twiInitialise(12);  // 12 = 400kHz
   tft_init();
 
-  setCurrentReadAddress(0); // CANNOT READ FROM CHIP BEFORE SETTING A READ ADDRESS FIRST (can also be done by writing data)
+
+  TWCR = SEND_START_CONDITION;
+  writeMPU(107, 9); // Initialise the MPU
+
+
+  TWCR = SEND_START_CONDITION;
+  gyroAccelY = readMPU(ACCEL_Y_H);
+
+
+
+  // Set start angle as balance point
+  TWCR = SEND_START_CONDITION;
+  AccelZ = readMPU(ACCEL_Z_H);
+
+
+  TWCR = SEND_START_CONDITION;
+  AccelY = readMPU(ACCEL_Y_H);
+
+  // Calculate accAngle
+  accAngle = atan2(AccelY, AccelZ);
+  accAngle *= RAD_TO_DEG;
+
+  //setCurrentReadAddress(0); // CANNOT READ FROM CHIP BEFORE SETTING A READ ADDRESS FIRST (can also be done by writing data)
 
   drawBackground();
 
@@ -801,6 +1097,41 @@ void setup() {
 
 void loop() {
 
+  // Take Readings
+  TWCR = SEND_START_CONDITION;
+  gyroValue = readMPU(GYRO_X_H);
+
+  TWCR = SEND_START_CONDITION;
+  AccelZ = readMPU(ACCEL_Z_H);
+
+  TWCR = SEND_START_CONDITION;
+  AccelY = readMPU(ACCEL_Y_H);
+
+  // Calculate accAngle
+  accAngle = atan2(AccelY, AccelZ);
+  accAngle *= RAD_TO_DEG;
+
+  // Calculate gyroAngle
+  tempTime = millis();
+  time = (tempTime - time);
+  gyroAngle = (((float)time/1000) * gyroValue);
+
+
+
+
+  // Complementary Filter
+  angle = (alpha * (angle + gyroAngle)) + ((1 - alpha) * accAngle);
+
+
+  TWCR = SEND_START_CONDITION;
+  gyroAccelY = readMPU(ACCEL_Y_H);
+
+  // pos_unmapped = gyroAccelY;
+  // pos_target = (int16_t)((pos_unmapped + 50) * (128.0 / 100.0));
+  // pos += (pos_target - pos) * 0.7 - 5;
+
+  pos = angle;
+  
 
   if (pos < 40) {
     reverseBool = 1;
@@ -860,16 +1191,20 @@ void loop() {
       countDown = 4;
     }
 
-    pos += pos_target * 3;
+    // pos += pos_target * 3;
 
-    if (pos > 78) {
-      pos_target = -1;
-    } else if (pos < 0) {
-      pos_target = 1;
+    // if (pos > 78) {
+    //   pos_target = -1;
+    // } else if (pos < 0) {
+    //   pos_target = 1;
 
-    }
+    // }
 
   }
+
+
+
+  time = millis();
   
 
 
