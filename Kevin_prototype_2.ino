@@ -975,7 +975,7 @@ void drawRow(uint8_t* rowArray) {
     }
   } else {
     for (int row = 0; row < 16; row++) {
-      for (int reg = 10; reg > 0; reg--) {
+      for (int reg = 9; reg >= 0; reg--) {
         for (int pixel = 0; pixel < 8; pixel++) {
           if ((rowArray[(row*10) + (reg)] >> pixel) & 1) {
             spi_transfer(0xFF);
@@ -1051,9 +1051,9 @@ void setup() {
 
   sei();
 
-  Serial.begin(9600);
-  while(!Serial);
-  Serial.println("Serial begun");
+  // Serial.begin(9600);
+  // while(!Serial);
+  // Serial.println("Serial begun");
 
   registerByte = 0;
   REG = 17280;
@@ -1096,6 +1096,8 @@ void setup() {
 // 4 planes stores from 17280 to 19199 (4 * (80x48))
 
 void loop() {
+
+  cos()
 
   // Take Readings
   TWCR = SEND_START_CONDITION;
