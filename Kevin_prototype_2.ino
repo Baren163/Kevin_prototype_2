@@ -25,6 +25,8 @@
 #define CONFIG 26
 #define OFFSET -530
 #define alpha 0.95
+#define BACKGROUND_H 0x00
+#define BACKGROUND_L 0x00
 
 // myRegister Pins
 #define DRC 7    // Data read complete
@@ -993,6 +995,119 @@ void drawRow(uint8_t* rowArray) {
 
 }
 
+void spi_transfer_colour_from_pallete(uint8_t palleteID) {
+
+  switch (palleteID) {
+
+    case 0:
+      spi_transfer(BACKGROUND_H);
+      spi_transfer(BACKGROUND_L);
+      break;
+
+    case 1:
+      spi_transfer(0);
+      spi_transfer(0);
+      break;
+
+    case 2:
+      spi_transfer(0xA6);
+      spi_transfer(0x18);
+      break;
+
+    case 3:
+      spi_transfer(0x64);
+      spi_transfer(0x10);
+      break;
+
+    case 4:
+      spi_transfer(0x85);
+      spi_transfer(0x14);
+      break;
+
+    case 5:
+      spi_transfer(0xC7);
+      spi_transfer(0x1C);
+      break;
+
+    case 6:
+      spi_transfer(0xE7);
+      spi_transfer(0x1C);
+      break;
+
+    case 7:
+      spi_transfer(0x01);
+      spi_transfer(0x04);
+      break;
+
+    case 8:
+      spi_transfer(0x22);
+      spi_transfer(0x08);
+      break;
+
+    case 9:
+      spi_transfer(0xE5);
+      spi_transfer(0x0C);
+      break;
+
+    case 10:
+      spi_transfer(0xA0);
+      spi_transfer(0x00);
+      break;
+
+    case 11:
+      spi_transfer(0x21);
+      spi_transfer(0x04);
+      break;
+
+    case 12:
+      spi_transfer(0xC6);
+      spi_transfer(0x18);
+      break;
+
+    default:
+      spi_transfer(BACKGROUND_H);
+      spi_transfer(BACKGROUND_L);
+      break;
+  }
+}
+
+void drawRowPalleteIndexing(uint8_t* rowArray) {
+
+  int colourID = 0;
+
+  digitalWrite(TFT_DC, HIGH); // Data mode
+  digitalWrite(TFT_CS, LOW);
+
+  if (reverseBool == 0) {
+    for (int reg = 0; reg < 160; reg++) {
+      for (int pixel = 0; pixel < 2; pixel++) {
+        if (pixel == 0) {
+          colourID = (rowArray[reg] >> 4);
+        } else {
+          colourID = (rowArray[reg] & 0b00001111);
+        }
+        spi_transfer_colour_from_pallete(colourID);
+      }
+    }
+  } else {
+    for (int row = 0; row < 4; row++) {
+      for (int reg = 39; reg >= 0; reg--) {
+        for (int pixel = 1; pixel >= 0; pixel--) {
+          if (pixel == 0) {
+            colourID = (rowArray[reg] >> 4);
+          } else {
+            colourID = (rowArray[reg] & 0b00001111);
+          }
+          spi_transfer_colour_from_pallete(colourID);
+        }
+      }
+    }
+  }
+
+  digitalWrite(TFT_CS, HIGH);
+
+}
+
 void drawImageDataDoubleSize(uint8_t* imageData) {
 
   digitalWrite(TFT_DC, HIGH); // Data mode
@@ -1051,12 +1166,15 @@ void setup() {
 
   sei();
 
-  // Serial.begin(9600);
-  // while(!Serial);
-  // Serial.println("Serial begun");
+  Serial.begin(9600);
+  while(!Serial);
+  Serial.println("Serial begun");
 
   registerByte = 0;
-  REG = 17280;
+  REG = 0;
+
+  REG_H = REG >> 8;
+  REG_L = REG;
 
   twiInitialise(12);  // 12 = 400kHz
   tft_init();
@@ -1091,13 +1209,11 @@ void setup() {
 
 }
 
-// alphabet stored from 0 to 16639
+// ColourPallete-Indexed plane from 0 to 1919
 // small_face stored at 16640 to 17279  (80x64)
 // 4 planes stores from 17280 to 19199 (4 * (80x48))
 
 void loop() {
-
-  cos()
 
   // Take Readings
   TWCR = SEND_START_CONDITION;
@@ -1143,29 +1259,31 @@ void loop() {
 
 
   TWCR = SEND_START_CONDITION;
-  sequentialRead(160, rowArray, ((REG + (ROW*10)) >> 8), (REG + (ROW*10))); // Read 1/3 of plane image
+  sequentialRead(160, rowArray, ((REG + (ROW*40)) >> 8), (REG + (ROW*40))); // With pallete indexing, one register contains the colour ID's for 2 pixels instead of 8
+                                                                            // and so 160 registers (bytes) is now just 320 pixels rather than 1280 (3840/3).
+                                                                            // So 1 image would take 12 sequential reads with the row only increasing by 4 each time
   
 
-  tft_set_addr_window(0+pos, (drawImageY + ROW), 79+pos, (drawImageY + ROW+15));
-  drawRow(rowArray);
+  tft_set_addr_window(0+pos, (drawImageY + ROW), 79+pos, (drawImageY + ROW+3));
+  drawRowPalleteIndexing(rowArray);
 
 
-  ROW += 16;
+  ROW += 4; // Reading 160 registers so with 4 bit pallete indexing (16 unique colours) thats 320 pixels. With 80 pixels in a row thats 4 rows so we need 12 reads for a full image (48 rows)
 
   if (ROW == 48) {
     ROW = 0;
-    if (abs(pos - 40) < 8) {
-      REG = 17280;
-    } else if (abs(pos - 40) < 15) {
-      REG = 17760;
-    } else if (abs(pos - 40) < 30) {
-      REG = 18240;
-    } else {
-      REG = 18720;
-    }
+    // if (abs(pos - 40) < 8) {
+    //   REG = 17280;
+    // } else if (abs(pos - 40) < 15) {
+    //   REG = 17760;
+    // } else if (abs(pos - 40) < 30) {
+    //   REG = 18240;
+    // } else {
+    //   REG = 18720;
+    // }
 
 
-    countDown--;
+    countDown--;  // Clear the side-debris
     if (countDown == 0) {
 
       tft_set_addr_window(0, drawImageY, pos, drawImageY + 48);
@@ -1208,6 +1326,9 @@ void loop() {
 
   time = millis();
   
+
+
+
 
 
   // if (Serial.available() > 0) {
