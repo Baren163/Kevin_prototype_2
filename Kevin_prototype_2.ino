@@ -1094,9 +1094,9 @@ void drawRowPalleteIndexing(uint8_t* rowArray) {
       for (int reg = 39; reg >= 0; reg--) {
         for (int pixel = 1; pixel >= 0; pixel--) {
           if (pixel == 0) {
-            colourID = (rowArray[reg] >> 4);
+            colourID = (rowArray[(row*40) + reg] >> 4);
           } else {
-            colourID = (rowArray[reg] & 0b00001111);
+            colourID = (rowArray[(row*40) + reg] & 0b00001111);
           }
           spi_transfer_colour_from_pallete(colourID);
         }
