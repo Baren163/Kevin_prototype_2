@@ -36,9 +36,9 @@
 #define LoadData 3
 
 // SPI pins
-#define TFT_CS   10  // Chip select
-#define TFT_DC    9  // Data/Command
-#define TFT_RST   8  // Reset
+#define TFT_CS    6  // Chip select
+#define TFT_DC    5  // Data/Command
+#define TFT_RST   4  // Reset
 
 
 uint8_t IsrExitFlow;
@@ -63,7 +63,7 @@ uint8_t byteBuffer = 0;
 uint8_t idx = 0;
 uint8_t incomingByte = 0;
 uint8_t rowArray[160];
-int drawImageY = 30;
+int drawImageY = 35;
 
 float counter = 0;
 float time_1, time_2;
@@ -828,8 +828,8 @@ void sequentialRead(int number, uint8_t array[], uint8_t registerToRead_H, uint8
 }
 
 void spi_init() {
-  // Set MOSI (PB2) and SCK (PB1) as output
-  DDRB |= (1 << PB2) | (1 << PB1);
+  // Set MOSI (PB3) and SCK (PB5) as output
+  DDRB |= (1 << PB3) | (1 << PB5) | (1 << PB2);
 
   SPSR = (1 << SPI2X); 
 
@@ -892,9 +892,11 @@ void tft_init() {
 
   tft_write_command(0x38);  // Idle mode OFF
 
+  tft_write_command(0x29); // Display ON
+
+  tft_write_command(0x28); // Display OFF
 
   tft_write_command(0x29); // Display ON
-  delay(100);
 }
 
 void tft_set_addr_window(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1) {
@@ -1209,7 +1211,7 @@ void setup() {
 
 }
 
-// ColourPallete-Indexed plane from 0 to 1919
+// ColourPallete-Indexed planes from 0 to 15,360  (8 * ((80*48)/2)
 // small_face stored at 16640 to 17279  (80x64)
 // 4 planes stores from 17280 to 19199 (4 * (80x48))
 
@@ -1272,15 +1274,23 @@ void loop() {
 
   if (ROW == 48) {
     ROW = 0;
-    // if (abs(pos - 40) < 8) {
-    //   REG = 17280;
-    // } else if (abs(pos - 40) < 15) {
-    //   REG = 17760;
-    // } else if (abs(pos - 40) < 30) {
-    //   REG = 18240;
-    // } else {
-    //   REG = 18720;
-    // }
+    if (abs(pos - 40) < 5) {
+      REG = 0;
+    } else if (abs(pos - 40) < 10) {
+      REG = 1920;
+    } else if (abs(pos - 40) < 15) {
+      REG = 3840;
+    } else if (abs(pos - 40) < 20) {
+      REG = 5760;
+    } else if (abs(pos - 40) < 25) {
+      REG = 7680;
+    } else if (abs(pos - 40) < 30) {
+      REG = 9600;
+    } else if (abs(pos - 40) < 35) {
+      REG = 11520;
+    } else {
+      REG = 13440;
+    }
 
 
     countDown--;  // Clear the side-debris
@@ -1322,71 +1332,10 @@ void loop() {
 
   }
 
-
-
   time = millis();
-  
 
 
 
-
-
-  // if (Serial.available() > 0) {
-
-  //   incomingByte = Serial.read();
-
-  //   int letterRegisterAddress = (incomingByte - 65) * 640;
-
-  //   ROW = 0;
-
-  //   if ((incomingByte > 90) || (incomingByte < 65)) {
-  //     Serial.println("Please input a letter of the alphabet in upper case");
-  //   } else {
-
-  //     while (ROW < 128) {
-
-  //       // time_1 = micros();
-        
-  //       TWCR = SEND_START_CONDITION;
-  //       sequentialRead(160, rowArray, (((ROW * 5) + letterRegisterAddress) >> 8), ((ROW * 5) + letterRegisterAddress)); // Length of time for sequentialRead of 160 registers: 15.47 mS at 100kHz I2C. 400kHz: 4.7mS
-        
-  //       // time_2 = micros();
-  //       // time = time_2 - time_1;
-  //       // Serial.print("Read: "); // 4728 * 4 = 18,912uS per frame (13%)
-  //       // Serial.println(time);
-
-
-
-
-  //       // time_1 = micros();
-
-  //       tft_set_addr_window(COL, ROW, COL+159, ROW+31);
-
-  //       // time_2 = micros();
-  //       // time = time_2 - time_1;
-  //       // Serial.print("Set addr: "); // 224uS * 4 = 896uS per frame (0.6%)
-  //       // Serial.println(time);
-
-
-
-
-  //       // time_1 = micros();
-
-  //       drawImageDataDoubleSize(rowArray);  // Time to set window addr and draw 1280 pixels: 8.75 mS
-
-  //       // time_2 = micros();
-  //       // time = time_2 - time_1;
-  //       // Serial.print("Draw: "); // Draw time: 32432uS * 4 = 129,728uS per frame (86%)
-  //       // Serial.println(time);
-        
-  //       ROW += 32;
-
-
-
-  //     }
-
-  //   }
-  // }
 
 
   // if (Serial.available() > 0) {
