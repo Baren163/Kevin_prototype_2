@@ -74,10 +74,10 @@ int pos_target = 1;
 int countDown = 4;
 int pos_unmapped = 1;
 
-float gyroAccelY;
 float gyroAngle = 0;
 float AccelZ;
 float AccelY;
+float AccelX;
 float accAngle;
 int16_t gyroValue;  // data type 'short', signed 16 bit variable
 unsigned long tempTime;
@@ -876,13 +876,14 @@ void tft_init() {
   spi_init();
 
   tft_reset();
+  delay(100);
 
   // ST7735S Initialization sequence (minimal)
   tft_write_command(0x01); // Software reset
   delay(150);
 
   tft_write_command(0x11); // Sleep out
-  delay(500);
+  delay(100);
 
   tft_write_command(0x3A); // Interface pixel format
   tft_write_data(0x05);    // 16-bit/pixel
@@ -891,12 +892,10 @@ void tft_init() {
   tft_write_data(0xA0);      // 0b10100000 = MY | MV | BGR
 
   tft_write_command(0x38);  // Idle mode OFF
+  delay(100);
 
   tft_write_command(0x29); // Display ON
-
-  tft_write_command(0x28); // Display OFF
-
-  tft_write_command(0x29); // Display ON
+  delay(100);
 }
 
 void tft_set_addr_window(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1) {
@@ -1160,6 +1159,8 @@ void drawBackground() {
 
   digitalWrite(TFT_CS, HIGH);
 
+  Serial.println("Drawing background");
+
 }
 
 
@@ -1168,9 +1169,9 @@ void setup() {
 
   sei();
 
-  Serial.begin(9600);
-  while(!Serial);
-  Serial.println("Serial begun");
+  // Serial.begin(9600);
+  // while(!Serial);
+  // Serial.println("Serial begun");
 
   registerByte = 0;
   REG = 0;
@@ -1187,21 +1188,20 @@ void setup() {
 
 
   TWCR = SEND_START_CONDITION;
-  gyroAccelY = readMPU(ACCEL_Y_H);
-
-
-
-  // Set start angle as balance point
-  TWCR = SEND_START_CONDITION;
-  AccelZ = readMPU(ACCEL_Z_H);
-
-
-  TWCR = SEND_START_CONDITION;
   AccelY = readMPU(ACCEL_Y_H);
 
-  // Calculate accAngle
-  accAngle = atan2(AccelY, AccelZ);
-  accAngle *= RAD_TO_DEG;
+
+  // // Set start angle as balance point
+  // TWCR = SEND_START_CONDITION;
+  // AccelZ = readMPU(ACCEL_Z_H);
+
+
+  // TWCR = SEND_START_CONDITION;
+  // AccelY = readMPU(ACCEL_Y_H);
+
+  // // Calculate accAngle
+  // accAngle = atan2(AccelY, AccelZ);
+  // accAngle *= RAD_TO_DEG;
 
   //setCurrentReadAddress(0); // CANNOT READ FROM CHIP BEFORE SETTING A READ ADDRESS FIRST (can also be done by writing data)
 
@@ -1217,41 +1217,58 @@ void setup() {
 
 void loop() {
 
-  // Take Readings
-  TWCR = SEND_START_CONDITION;
-  gyroValue = readMPU(GYRO_X_H);
+  delay(1);
 
-  TWCR = SEND_START_CONDITION;
-  AccelZ = readMPU(ACCEL_Z_H);
+  // // Take Readings
+  // TWCR = SEND_START_CONDITION;
+  // gyroValue = readMPU(GYRO_X_H);
 
-  TWCR = SEND_START_CONDITION;
-  AccelY = readMPU(ACCEL_Y_H);
+  // TWCR = SEND_START_CONDITION;
+  // AccelZ = readMPU(ACCEL_Z_H);
 
-  // Calculate accAngle
-  accAngle = atan2(AccelY, AccelZ);
-  accAngle *= RAD_TO_DEG;
+  // TWCR = SEND_START_CONDITION;
+  // AccelY = readMPU(ACCEL_Y_H);
 
-  // Calculate gyroAngle
-  tempTime = millis();
-  time = (tempTime - time);
-  gyroAngle = (((float)time/1000) * gyroValue);
+  // // Calculate accAngle
+  // accAngle = atan2(AccelY, AccelZ);
+  // accAngle *= RAD_TO_DEG;
+
+  // // Calculate gyroAngle
+  // tempTime = millis();
+  // time = (tempTime - time);
+  // gyroAngle = (((float)time/1000) * gyroValue);
+
+  // // Complementary Filter
+  // angle = (alpha * (angle + gyroAngle)) + ((1 - alpha) * accAngle);
 
 
-
-
-  // Complementary Filter
-  angle = (alpha * (angle + gyroAngle)) + ((1 - alpha) * accAngle);
-
-
-  TWCR = SEND_START_CONDITION;
-  gyroAccelY = readMPU(ACCEL_Y_H);
-
-  // pos_unmapped = gyroAccelY;
+  // pos_unmapped = AccelY;
   // pos_target = (int16_t)((pos_unmapped + 50) * (128.0 / 100.0));
   // pos += (pos_target - pos) * 0.7 - 5;
 
-  pos = angle;
-  
+
+
+  TWCR = SEND_START_CONDITION;
+  AccelX = readMPU(ACCEL_X_H);
+
+
+  // pos = AccelX + 30;
+
+  pos += (((AccelX-50)*-1) - pos) * 0.4;
+
+  // Serial.println(pos);
+
+
+
+
+
+  // // Map AccelY values to a range of 0 to 80
+  // pos_unmapped = AccelY;
+  // pos_target = (int16_t)((pos_unmapped + 50) * (80.0 / 100.0)); // Adjusted range mapping
+  // pos += (pos_target - pos) * 0.7;
+
+
+
 
   if (pos < 40) {
     reverseBool = 1;
@@ -1320,15 +1337,6 @@ void loop() {
 
       countDown = 4;
     }
-
-    // pos += pos_target * 3;
-
-    // if (pos > 78) {
-    //   pos_target = -1;
-    // } else if (pos < 0) {
-    //   pos_target = 1;
-
-    // }
 
   }
 
