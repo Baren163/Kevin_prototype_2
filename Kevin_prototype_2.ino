@@ -1249,12 +1249,12 @@ void loop() {
 
 
   TWCR = SEND_START_CONDITION;
-  AccelX = readMPU(ACCEL_X_H);
+  AccelY = readMPU(ACCEL_Y_H);
 
 
   // pos = AccelX + 30;
 
-  pos += (((AccelX-50)*-1) - pos) * 0.4;
+  pos += (((AccelY+45)) - pos) * 0.4;
 
   // Serial.println(pos);
 
