@@ -27,6 +27,7 @@
 #define alpha 0.95
 #define BACKGROUND_H 0x00
 #define BACKGROUND_L 0x00
+#define ball_size 30
 
 // myRegister Pins
 #define DRC 7    // Data read complete
@@ -36,9 +37,9 @@
 #define LoadData 3
 
 // SPI pins
-#define TFT_CS    6  // Chip select
-#define TFT_DC    5  // Data/Command
-#define TFT_RST   4  // Reset
+#define spi_CS    6  // Chip select
+#define spi_DC    5  // Data/Command
+#define spi_RST   4  // Reset
 
 
 uint8_t IsrExitFlow;
@@ -66,7 +67,7 @@ uint8_t rowArray[160];
 int drawImageY = 35;
 
 float counter = 0;
-float time_1, time_2;
+float time_1, time_2, dt;
 
 
 int pos = 1;
@@ -80,9 +81,17 @@ float AccelY;
 float AccelX;
 float accAngle;
 int16_t gyroValue;  // data type 'short', signed 16 bit variable
-unsigned long tempTime;
-unsigned long time = 0;
 float angle;
+
+uint8_t mode = 1;
+int16_t ball_pos_x = 20;
+int16_t ball_pos_y = 20;
+int16_t ball_speed_x = 1;
+int16_t ball_speed_y = 1;
+int16_t ball_accel_x = 0;
+int16_t ball_accel_y = 0;
+int16_t prev_ball_pos_x = 20;
+int16_t prev_ball_pos_y = 20;
 
 
 //  Initialise the TWI peripheral (I2C)
@@ -846,78 +855,78 @@ uint8_t spi_transfer(uint8_t data) {
 }
 
 
-void tft_write_command(uint8_t cmd) {
-  digitalWrite(TFT_DC, LOW);     // Command mode
-  digitalWrite(TFT_CS, LOW);
+void spi_write_command(uint8_t cmd) {
+  digitalWrite(spi_DC, LOW);     // Command mode
+  digitalWrite(spi_CS, LOW);
   spi_transfer(cmd);
-  digitalWrite(TFT_CS, HIGH);
+  digitalWrite(spi_CS, HIGH);
 }
 
-void tft_write_data(uint8_t data) {
-  digitalWrite(TFT_DC, HIGH);    // Data mode
-  digitalWrite(TFT_CS, LOW);
+void spi_write_data(uint8_t data) {
+  digitalWrite(spi_DC, HIGH);    // Data mode
+  digitalWrite(spi_CS, LOW);
   spi_transfer(data);
-  digitalWrite(TFT_CS, HIGH);
+  digitalWrite(spi_CS, HIGH);
 }
 
 
-void tft_reset() {
-  digitalWrite(TFT_RST, LOW);
+void spi_reset() {
+  digitalWrite(spi_RST, LOW);
   delay(50);
-  digitalWrite(TFT_RST, HIGH);
+  digitalWrite(spi_RST, HIGH);
   delay(50);
 }
 
-void tft_init() {
-  pinMode(TFT_CS, OUTPUT);
-  pinMode(TFT_DC, OUTPUT);
-  pinMode(TFT_RST, OUTPUT);
+void screen_init() {
+  pinMode(spi_CS, OUTPUT);
+  pinMode(spi_DC, OUTPUT);
+  pinMode(spi_RST, OUTPUT);
 
   spi_init();
 
-  tft_reset();
+  spi_reset();
   delay(100);
 
   // ST7735S Initialization sequence (minimal)
-  tft_write_command(0x01); // Software reset
+  spi_write_command(0x01); // Software reset
   delay(150);
 
-  tft_write_command(0x11); // Sleep out
+  spi_write_command(0x11); // Sleep out
   delay(100);
 
-  tft_write_command(0x3A); // Interface pixel format
-  tft_write_data(0x05);    // 16-bit/pixel
+  spi_write_command(0x3A); // Interface pixel format
+  spi_write_data(0x05);    // 16-bit/pixel
 
-  tft_write_command(0x36);   // MADCTL
-  tft_write_data(0xA0);      // 0b10100000 = MY | MV | BGR
+  spi_write_command(0x36);   // MADCTL
+  spi_write_data(0xA0);      // 0b10100000 = MY | MV | BGR
 
-  tft_write_command(0x38);  // Idle mode OFF
+  spi_write_command(0x38);  // Idle mode OFF
   delay(100);
 
-  tft_write_command(0x29); // Display ON
+  spi_write_command(0x29); // Display ON
   delay(100);
 }
 
-void tft_set_addr_window(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1) {
-  tft_write_command(0x2A); // Column addr set
-  tft_write_data(0x00);
-  tft_write_data(x0);
-  tft_write_data(0x00);
-  tft_write_data(x1);
+void spi_set_addr_window(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1) {
+  spi_write_command(0x2A); // Column addr set
+  spi_write_data(0x00);
+  spi_write_data(x0);
+  spi_write_data(0x00);
+  spi_write_data(x1);
 
-  tft_write_command(0x2B); // Row addr set
-  tft_write_data(0x00);
-  tft_write_data(y0);
-  tft_write_data(0x00);
-  tft_write_data(y1);
+  spi_write_command(0x2B); // Row addr set
+  spi_write_data(0x00);
+  spi_write_data(y0);
+  spi_write_data(0x00);
+  spi_write_data(y1);
 
-  tft_write_command(0x2C); // Memory write
+  spi_write_command(0x2C); // Memory write
 }
 
-void tft_draw_next_8_pixels(uint8_t byte) {
+void spi_draw_next_8_pixels(uint8_t byte) {
 
-  digitalWrite(TFT_DC, HIGH); // Data mode
-  digitalWrite(TFT_CS, LOW);
+  digitalWrite(spi_DC, HIGH); // Data mode
+  digitalWrite(spi_CS, LOW);
 
   for (int k = 7; k >= 0; k--) {
     if ((byte >> k) & 1) {
@@ -929,7 +938,7 @@ void tft_draw_next_8_pixels(uint8_t byte) {
     }
   }
 
-  digitalWrite(TFT_CS, HIGH);
+  digitalWrite(spi_CS, HIGH);
   
 }
 
@@ -961,8 +970,8 @@ void registerWrite(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t
 
 void drawRow(uint8_t* rowArray) {
 
-  digitalWrite(TFT_DC, HIGH); // Data mode
-  digitalWrite(TFT_CS, LOW);
+  digitalWrite(spi_DC, HIGH); // Data mode
+  digitalWrite(spi_CS, LOW);
 
   if (reverseBool == 0) {
     for (int j = 0; j < 160; j++) {
@@ -992,7 +1001,7 @@ void drawRow(uint8_t* rowArray) {
     }
   }
 
-  digitalWrite(TFT_CS, HIGH);
+  digitalWrite(spi_CS, HIGH);
 
 }
 
@@ -1076,8 +1085,8 @@ void drawRowPalleteIndexing(uint8_t* rowArray) {
 
   int colourID = 0;
 
-  digitalWrite(TFT_DC, HIGH); // Data mode
-  digitalWrite(TFT_CS, LOW);
+  digitalWrite(spi_DC, HIGH); // Data mode
+  digitalWrite(spi_CS, LOW);
 
   if (reverseBool == 0) {
     for (int reg = 0; reg < 160; reg++) {
@@ -1105,14 +1114,14 @@ void drawRowPalleteIndexing(uint8_t* rowArray) {
     }
   }
 
-  digitalWrite(TFT_CS, HIGH);
+  digitalWrite(spi_CS, HIGH);
 
 }
 
 void drawImageDataDoubleSize(uint8_t* imageData) {
 
-  digitalWrite(TFT_DC, HIGH); // Data mode
-  digitalWrite(TFT_CS, LOW);
+  digitalWrite(spi_DC, HIGH); // Data mode
+  digitalWrite(spi_CS, LOW);
 
   bool repeat = 1;
 
@@ -1142,26 +1151,87 @@ void drawImageDataDoubleSize(uint8_t* imageData) {
 
   }
 
-  digitalWrite(TFT_CS, HIGH);
+  digitalWrite(spi_CS, HIGH);
 
 }
 
 void drawBackground() {
-  tft_set_addr_window(0, 0, 161, 131);
+  spi_set_addr_window(0, 0, 161, 131);
 
-  digitalWrite(TFT_DC, HIGH); // Data mode
-  digitalWrite(TFT_CS, LOW);
+  digitalWrite(spi_DC, HIGH); // Data mode
+  digitalWrite(spi_CS, LOW);
 
   for (int i = 0; i < 21384; i++) {
     spi_transfer(0x00);
     spi_transfer(0x00);
   }
 
-  digitalWrite(TFT_CS, HIGH);
-
-  Serial.println("Drawing background");
+  digitalWrite(spi_CS, HIGH);
 
 }
+
+void update_ball_forces() {
+    AccelZ = scale_accel(AccelZ);
+    AccelY = scale_accel(AccelY);
+
+    ball_accel_y = -AccelZ;
+    ball_accel_x = AccelY;
+
+}
+
+float scale_accel(int16_t raw_value) {
+    float normalized = (float)raw_value / 120.0;
+    float denom_scale = tanh(normalized);
+
+    // Avoid division by zero or very small numbers
+    if (denom_scale < 0.01 && denom_scale > -0.01) {
+        if (denom_scale >= 0) {
+            denom_scale = 0.01;   // Small positive number
+        } else {
+            denom_scale = -0.01;  // Small negative number
+        }
+    }
+
+    if (raw_value < 0) {
+      raw_value *= -1;
+    }
+
+
+    return raw_value / denom_scale;
+}
+
+
+
+void apply_ball_forces() {
+  ball_speed_y += ball_accel_y * dt;
+  ball_speed_x += ball_accel_x * dt;
+}
+
+void calculate_ball_position() {
+  ball_pos_y += ball_speed_y * dt;
+  ball_pos_x += ball_speed_x * dt;
+}
+
+void handle_bounce() {
+  // Bounce horizontally
+  if (ball_pos_x < 0) {
+    ball_pos_x = 1;
+    ball_speed_x = -ball_speed_x * 0.6;
+  } else if (ball_pos_x > 160 - ball_size) {
+    ball_pos_x = 159 - ball_size;
+    ball_speed_x = -ball_speed_x * 0.6;
+  }
+
+  // Bounce vertically
+  if (ball_pos_y < 0) {
+    ball_pos_y = 1;
+    ball_speed_y = -ball_speed_y * 0.6;
+  } else if (ball_pos_y > 128 - ball_size) {
+    ball_pos_y = 127 - ball_size;
+    ball_speed_y = -ball_speed_y * 0.6;
+  }
+}
+
 
 
 void setup() {
@@ -1169,7 +1239,7 @@ void setup() {
 
   sei();
 
-  // Serial.begin(9600);
+  // Serial.begin(19200);
   // while(!Serial);
   // Serial.println("Serial begun");
 
@@ -1180,7 +1250,7 @@ void setup() {
   REG_L = REG;
 
   twiInitialise(12);  // 12 = 400kHz
-  tft_init();
+  screen_init();
 
 
   TWCR = SEND_START_CONDITION;
@@ -1211,139 +1281,146 @@ void setup() {
 
 }
 
-// ColourPallete-Indexed planes from 0 to 15,360  (8 * ((80*48)/2)
+// ColourPallete-Indexed planes from 0 to 15,360  8*((80*48)/2)
 // small_face stored at 16640 to 17279  (80x64)
-// 4 planes stores from 17280 to 19199 (4 * (80x48))
+// 4 planes stored from 17280 to 19199 (4 * (80x48))
 
 void loop() {
 
-  delay(1);
+  if (mode == 0) {
 
-  // // Take Readings
-  // TWCR = SEND_START_CONDITION;
-  // gyroValue = readMPU(GYRO_X_H);
+    TWCR = SEND_START_CONDITION;
+    AccelY = readMPU(ACCEL_Y_H);
+    AccelY += 48;
 
-  // TWCR = SEND_START_CONDITION;
-  // AccelZ = readMPU(ACCEL_Z_H);
+    pos = (0.9*pos) + (0.1*AccelY);
 
-  // TWCR = SEND_START_CONDITION;
-  // AccelY = readMPU(ACCEL_Y_H);
+    // // Map AccelY values to a range of 0 to 80
+    // pos_unmapped = AccelY;
+    // pos_target = (int16_t)((pos_unmapped + 50) * (80.0 / 100.0)); // Adjusted range mapping
+    // pos += (pos_target - pos) * 0.7;
 
-  // // Calculate accAngle
-  // accAngle = atan2(AccelY, AccelZ);
-  // accAngle *= RAD_TO_DEG;
-
-  // // Calculate gyroAngle
-  // tempTime = millis();
-  // time = (tempTime - time);
-  // gyroAngle = (((float)time/1000) * gyroValue);
-
-  // // Complementary Filter
-  // angle = (alpha * (angle + gyroAngle)) + ((1 - alpha) * accAngle);
-
-
-  // pos_unmapped = AccelY;
-  // pos_target = (int16_t)((pos_unmapped + 50) * (128.0 / 100.0));
-  // pos += (pos_target - pos) * 0.7 - 5;
-
-
-
-  TWCR = SEND_START_CONDITION;
-  AccelY = readMPU(ACCEL_Y_H);
-
-
-  // pos = AccelX + 30;
-
-  pos += (((AccelY+45)) - pos) * 0.4;
-
-  // Serial.println(pos);
-
-
-
-
-
-  // // Map AccelY values to a range of 0 to 80
-  // pos_unmapped = AccelY;
-  // pos_target = (int16_t)((pos_unmapped + 50) * (80.0 / 100.0)); // Adjusted range mapping
-  // pos += (pos_target - pos) * 0.7;
-
-
-
-
-  if (pos < 40) {
-    reverseBool = 1;
-  } else {
-    reverseBool = 0;
-  }
-
-
-  TWCR = SEND_START_CONDITION;
-  sequentialRead(160, rowArray, ((REG + (ROW*40)) >> 8), (REG + (ROW*40))); // With pallete indexing, one register contains the colour ID's for 2 pixels instead of 8
-                                                                            // and so 160 registers (bytes) is now just 320 pixels rather than 1280 (3840/3).
-                                                                            // So 1 image would take 12 sequential reads with the row only increasing by 4 each time
-  
-
-  tft_set_addr_window(0+pos, (drawImageY + ROW), 79+pos, (drawImageY + ROW+3));
-  drawRowPalleteIndexing(rowArray);
-
-
-  ROW += 4; // Reading 160 registers so with 4 bit pallete indexing (16 unique colours) thats 320 pixels. With 80 pixels in a row thats 4 rows so we need 12 reads for a full image (48 rows)
-
-  if (ROW == 48) {
-    ROW = 0;
-    if (abs(pos - 40) < 5) {
-      REG = 0;
-    } else if (abs(pos - 40) < 10) {
-      REG = 1920;
-    } else if (abs(pos - 40) < 15) {
-      REG = 3840;
-    } else if (abs(pos - 40) < 20) {
-      REG = 5760;
-    } else if (abs(pos - 40) < 25) {
-      REG = 7680;
-    } else if (abs(pos - 40) < 30) {
-      REG = 9600;
-    } else if (abs(pos - 40) < 35) {
-      REG = 11520;
+    if (pos < 40) {
+      reverseBool = 1;
     } else {
-      REG = 13440;
+      reverseBool = 0;
     }
 
 
-    countDown--;  // Clear the side-debris
-    if (countDown == 0) {
+    TWCR = SEND_START_CONDITION;
+    sequentialRead(160, rowArray, ((REG + (ROW*40)) >> 8), (REG + (ROW*40))); // With pallete indexing, one register contains the colour ID's for 2 pixels instead of 8
+                                                                              // and so 160 registers (bytes) is now just 320 pixels rather than 1280 (3840/3).
+                                                                              // So 1 image would take 12 sequential reads with the row only increasing by 4 each time
+    
 
-      tft_set_addr_window(0, drawImageY, pos, drawImageY + 48);
+    spi_set_addr_window(0+pos, (drawImageY + ROW), 79+pos, (drawImageY + ROW+3));
+    drawRowPalleteIndexing(rowArray);
 
-      digitalWrite(TFT_DC, HIGH); // Data mode
-      digitalWrite(TFT_CS, LOW);
-      for (int i = 0; i < (pos*48); i++) {
-        spi_transfer(0);
-        spi_transfer(0);
+
+    ROW += 4; // Reading 160 registers so with 4 bit pallete indexing (16 unique colours) thats 320 pixels. With 80 pixels in a row thats 4 rows so we need 12 reads for a full image (48 rows)
+
+    if (ROW == 48) {
+      ROW = 0;
+      if (abs(pos - 40) < 5) {
+        REG = 0;
+      } else if (abs(pos - 40) < 10) {
+        REG = 1920;
+      } else if (abs(pos - 40) < 15) {
+        REG = 3840;
+      } else if (abs(pos - 40) < 20) {
+        REG = 5760;
+      } else if (abs(pos - 40) < 25) {
+        REG = 7680;
+      } else if (abs(pos - 40) < 30) {
+        REG = 9600;
+      } else if (abs(pos - 40) < 35) {
+        REG = 11520;
+      } else {
+        REG = 13440;
       }
-      digitalWrite(TFT_CS, HIGH);
 
 
-      tft_set_addr_window(pos+80, drawImageY, 160, drawImageY + 48);
+      countDown--;  // Clear the side-debris
+      if (countDown == 0) {
 
-      digitalWrite(TFT_DC, HIGH); // Data mode
-      digitalWrite(TFT_CS, LOW);
-      for (int i = 0; i < ((80-pos)*48); i++) {
-        spi_transfer(0);
-        spi_transfer(0);  
+        spi_set_addr_window(0, drawImageY, pos, drawImageY + 48);
+
+        digitalWrite(spi_DC, HIGH); // Data mode
+        digitalWrite(spi_CS, LOW);
+        for (int i = 0; i < (pos*48); i++) {
+          spi_transfer(0);
+          spi_transfer(0);
+        }
+        digitalWrite(spi_CS, HIGH);
+
+
+        spi_set_addr_window(pos+80, drawImageY, 160, drawImageY + 48);
+
+        digitalWrite(spi_DC, HIGH); // Data mode
+        digitalWrite(spi_CS, LOW);
+        for (int i = 0; i < ((80-pos)*48); i++) {
+          spi_transfer(0);
+          spi_transfer(0);  
+        }
+        digitalWrite(spi_CS, HIGH);
+
+
+        countDown = 4;
       }
-      digitalWrite(TFT_CS, HIGH);
 
-
-      countDown = 4;
     }
+
+  } else if (mode == 1) {
+    // Screen size is 128*160. This mode will display a bouncing ball that will react to forces measured from accelerometer and bounce of the 4 walls of screen
+    // Set address window to size of ball (30x30)
+    time_2 = millis();
+    // dt = (time_2 - time_1) / 100;  // dt in seconds
+    dt = 0.05;
+    time_1 = time_2;                   // update for next frame
+
+    TWCR = SEND_START_CONDITION;
+    AccelY = readMPU(ACCEL_Y_H);
+
+    TWCR = SEND_START_CONDITION;
+    AccelZ = readMPU(ACCEL_Z_H);
+
+    prev_ball_pos_x = ball_pos_x;
+    prev_ball_pos_y = ball_pos_y;
+
+    update_ball_forces();
+
+    apply_ball_forces();
+
+    calculate_ball_position();
+
+    handle_bounce();
+
+    // Remove old ball before drawing new one
+    spi_set_addr_window(prev_ball_pos_x, prev_ball_pos_y, prev_ball_pos_x + ball_size, prev_ball_pos_y + ball_size);
+
+    digitalWrite(spi_DC, HIGH); // Data mode
+    digitalWrite(spi_CS, LOW);
+    for (int i = 0; i < (ball_size*ball_size); i++) {
+      spi_transfer(0x00);
+      spi_transfer(0x00);
+    }
+    digitalWrite(spi_CS, HIGH);
+
+    // Draw new ball
+    spi_set_addr_window(ball_pos_x, ball_pos_y, ball_pos_x + ball_size, ball_pos_y + ball_size);
+    digitalWrite(spi_DC, HIGH); // Data mode
+    digitalWrite(spi_CS, LOW);
+
+    for (int i = 0; i < (ball_size*ball_size); i++) {
+      spi_transfer(0xF3);
+      spi_transfer(0x91);
+    }
+
+    digitalWrite(spi_CS, HIGH);
+
+
 
   }
-
-  time = millis();
-
-
-
 
 
   // if (Serial.available() > 0) {
