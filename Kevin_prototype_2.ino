@@ -28,6 +28,9 @@
 #define BACKGROUND_H 0x00
 #define BACKGROUND_L 0x00
 #define ball_size 30
+#define SCREEN_WIDTH 160
+#define SCREEN_HEIGHT 128
+
 
 // myRegister Pins
 #define DRC 7    // Data read complete
@@ -365,7 +368,6 @@ int16_t readMPU(uint8_t registerToRead) {
 
 }
 
-
 void writeI2C(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t valueToWrite) {
 
   while (1) {
@@ -550,7 +552,6 @@ void writeI2C(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t valu
   }
 }
 
-
 uint16_t readI2C(uint8_t registerToRead_H, uint8_t registerToRead_L) {
 
   uint16_t readValue;
@@ -693,7 +694,6 @@ uint16_t readI2C(uint8_t registerToRead_H, uint8_t registerToRead_L) {
   }
 
 }
-
 
 void sequentialRead(int number, uint8_t array[], uint8_t registerToRead_H, uint8_t registerToRead_L) { // alternatively uint8_t* array
 
@@ -853,7 +853,6 @@ uint8_t spi_transfer(uint8_t data) {
   while (!(SPSR & (1 << SPIF)));    // Wait for transmission complete
   return SPDR;                      // Return received data
 }
-
 
 void spi_write_command(uint8_t cmd) {
   digitalWrite(spi_DC, LOW);     // Command mode
@@ -1178,41 +1177,43 @@ void drawBackground() {
 }
 
 void update_ball_forces() {
-
   ball_accel_y = -AccelZ;
   ball_accel_x = AccelY;
-
 }
 
 void apply_ball_forces() {
-  ball_speed_y += ball_accel_y * dt;
-  ball_speed_x += ball_accel_x * dt;
+  ball_speed_y += ball_accel_y * 0.5;
+  ball_speed_x += ball_accel_x * 0.5;
 }
 
 void calculate_ball_position() {
-  ball_pos_y += ball_speed_y * dt;
-  ball_pos_x += ball_speed_x * dt;
+  ball_pos_y += ball_speed_y;
+  ball_pos_x += ball_speed_x;
 }
 
 void handle_bounce() {
-  // Bounce horizontally
-  if (ball_pos_x < 0) {
-    ball_pos_x = 1;
-    ball_speed_x = -ball_speed_x * 0.6;
-  } else if (ball_pos_x > 160 - ball_size) {
-    ball_pos_x = 159 - ball_size;
-    ball_speed_x = -ball_speed_x * 0.6;
-  }
+    // Horizontal bounce
+    if (ball_pos_x < 0) {
+      ball_speed_x = (ball_speed_x * -0.6);
+      ball_pos_x = 1;
+    } else if ((ball_pos_x + ball_size) > 161) {
+      ball_speed_x *= -0.3;
+      ball_pos_x = 161 - ball_size;
+    }
 
-  // Bounce vertically
-  if (ball_pos_y < 0) {
-    ball_pos_y = 1;
-    ball_speed_y = -ball_speed_y * 0.6;
-  } else if (ball_pos_y > 128 - ball_size) {
-    ball_pos_y = 127 - ball_size;
-    ball_speed_y = -ball_speed_y * 0.6;
-  }
+    // Vertical bounce
+    if (ball_pos_y < 0) {
+      ball_speed_y = (ball_speed_y * -0.6);
+      ball_pos_y = 1;
+    } else if ((ball_pos_y + ball_size) > 129) {
+      ball_speed_y *= -0.3;
+      ball_pos_y = 129 - ball_size;
+    }
+
+    // Serial.print("bsx: "); Serial.println(ball_speed_x);
+    // Serial.print("bSy: "); Serial.println(ball_speed_y);
 }
+
 
 void setup() {
   // put your setup code here, to run once:
@@ -1353,16 +1354,15 @@ void loop() {
   } else if (mode == 1) {
     // Screen size is 128*160. This mode will display a bouncing ball that will react to forces measured from accelerometer and bounce of the 4 walls of screen
     // Set address window to size of ball (30x30)
-    time_2 = millis();
-    // dt = (time_2 - time_1) / 100;  // dt in seconds
-    dt = 0.05;
-    time_1 = time_2;                   // update for next frame
 
     TWCR = SEND_START_CONDITION;
     AccelY = readMPU(ACCEL_Y_H);
 
     TWCR = SEND_START_CONDITION;
     AccelZ = readMPU(ACCEL_Z_H);
+
+    // Pre-proccess AccelZ to decrease effects of gravity
+    AccelZ += 70;
 
     prev_ball_pos_x = ball_pos_x;
     prev_ball_pos_y = ball_pos_y;
@@ -1371,9 +1371,12 @@ void loop() {
 
     apply_ball_forces();
 
+    handle_bounce();
+
     calculate_ball_position();
 
-    handle_bounce();
+    Serial.println(AccelY);
+
 
 
     int16_t delta_pos_x = (ball_pos_x - prev_ball_pos_x);
