@@ -869,6 +869,15 @@ void spi_write_data(uint8_t data) {
   digitalWrite(spi_CS, HIGH);
 }
 
+void spi_write_x_constant_colour(uint8_t data, uint16_t x) {
+  digitalWrite(spi_DC, HIGH); // Data mode
+  digitalWrite(spi_CS, LOW);
+  for (int i = 0; i < x; i++) {
+    spi_transfer(data);
+    spi_transfer(data); // Using 16 bit colour so must spi_transfer 8 bit value twice
+  }
+  digitalWrite(spi_CS, HIGH);
+}
 
 void spi_reset() {
   digitalWrite(spi_RST, LOW);
@@ -942,7 +951,6 @@ void spi_draw_next_8_pixels(uint8_t byte) {
   
 }
 
-
 void setCurrentReadAddress(uint16_t registerAddress) {
   setReadAddress = 1;
   TWCR = SEND_START_CONDITION;
@@ -966,7 +974,6 @@ void registerWrite(uint8_t registerToWrite_H, uint8_t registerToWrite_L, uint8_t
   byteWrite = 0;
 
 }
-
 
 void drawRow(uint8_t* rowArray) {
 
@@ -1171,36 +1178,11 @@ void drawBackground() {
 }
 
 void update_ball_forces() {
-    AccelZ = scale_accel(AccelZ);
-    AccelY = scale_accel(AccelY);
 
-    ball_accel_y = -AccelZ;
-    ball_accel_x = AccelY;
+  ball_accel_y = -AccelZ;
+  ball_accel_x = AccelY;
 
 }
-
-float scale_accel(int16_t raw_value) {
-    float normalized = (float)raw_value / 120.0;
-    float denom_scale = tanh(normalized);
-
-    // Avoid division by zero or very small numbers
-    if (denom_scale < 0.01 && denom_scale > -0.01) {
-        if (denom_scale >= 0) {
-            denom_scale = 0.01;   // Small positive number
-        } else {
-            denom_scale = -0.01;  // Small negative number
-        }
-    }
-
-    if (raw_value < 0) {
-      raw_value *= -1;
-    }
-
-
-    return raw_value / denom_scale;
-}
-
-
 
 void apply_ball_forces() {
   ball_speed_y += ball_accel_y * dt;
@@ -1232,16 +1214,14 @@ void handle_bounce() {
   }
 }
 
-
-
 void setup() {
   // put your setup code here, to run once:
 
   sei();
 
-  // Serial.begin(19200);
-  // while(!Serial);
-  // Serial.println("Serial begun");
+  Serial.begin(19200);
+  while(!Serial);
+  Serial.println("Serial begun");
 
   registerByte = 0;
   REG = 0;
@@ -1395,29 +1375,40 @@ void loop() {
 
     handle_bounce();
 
-    // Remove old ball before drawing new one
-    spi_set_addr_window(prev_ball_pos_x, prev_ball_pos_y, prev_ball_pos_x + ball_size, prev_ball_pos_y + ball_size);
 
-    digitalWrite(spi_DC, HIGH); // Data mode
-    digitalWrite(spi_CS, LOW);
-    for (int i = 0; i < (ball_size*ball_size); i++) {
-      spi_transfer(0x00);
-      spi_transfer(0x00);
+    int16_t delta_pos_x = (ball_pos_x - prev_ball_pos_x);
+    int16_t delta_pos_y = (ball_pos_y - prev_ball_pos_y);
+
+    if (delta_pos_x != 0) {
+      if (delta_pos_x > 0) {
+        spi_set_addr_window(prev_ball_pos_x, prev_ball_pos_y, prev_ball_pos_x + delta_pos_x-1, prev_ball_pos_y + ball_size-1);
+        spi_write_x_constant_colour(0x00, ((delta_pos_x*ball_size)));
+      }
+      if (delta_pos_x < 0) {
+        spi_set_addr_window((prev_ball_pos_x + ball_size) + (delta_pos_x), prev_ball_pos_y, prev_ball_pos_x + ball_size-1, prev_ball_pos_y + ball_size-1);
+        spi_write_x_constant_colour(0x00, ((abs(delta_pos_x)*ball_size)));
+      }
     }
-    digitalWrite(spi_CS, HIGH);
+
+    if (delta_pos_y != 0) {
+      if (delta_pos_y > 0) {
+        spi_set_addr_window(prev_ball_pos_x, prev_ball_pos_y, prev_ball_pos_x + ball_size-1, prev_ball_pos_y + delta_pos_y-1);
+        spi_write_x_constant_colour(0x00, ((delta_pos_y*ball_size)));
+      }
+      if (delta_pos_y < 0) {
+        spi_set_addr_window(prev_ball_pos_x, (prev_ball_pos_y + ball_size) + delta_pos_y, prev_ball_pos_x + ball_size-1, prev_ball_pos_y + ball_size-1);
+        spi_write_x_constant_colour(0x00, ((abs(delta_pos_y)*ball_size)));
+      }
+    }
+
+
+    // // Remove old ball before drawing new one
+    // spi_set_addr_window(prev_ball_pos_x, prev_ball_pos_y, prev_ball_pos_x + ball_size, prev_ball_pos_y + ball_size);
+    // spi_write_x_constant_colour(0x00, ball_size*ball_size);
 
     // Draw new ball
-    spi_set_addr_window(ball_pos_x, ball_pos_y, ball_pos_x + ball_size, ball_pos_y + ball_size);
-    digitalWrite(spi_DC, HIGH); // Data mode
-    digitalWrite(spi_CS, LOW);
-
-    for (int i = 0; i < (ball_size*ball_size); i++) {
-      spi_transfer(0xF3);
-      spi_transfer(0x91);
-    }
-
-    digitalWrite(spi_CS, HIGH);
-
+    spi_set_addr_window(ball_pos_x, ball_pos_y, ball_pos_x + ball_size-1, ball_pos_y + ball_size-1);
+    spi_write_x_constant_colour(0x66, (ball_size-1)*(ball_size-1));
 
 
   }
